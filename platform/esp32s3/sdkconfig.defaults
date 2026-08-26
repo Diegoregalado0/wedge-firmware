@@ -44,3 +44,8 @@ CONFIG_LWIP_IPV4_NAPT=y
 # working set resident between passes.
 CONFIG_ESP32S3_DATA_CACHE_64KB=y
 CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y
+
+# The part is rated for 240 MHz and the compositor is the only thing on it
+# that matters. It stays plugged in, so the power difference is not a
+# consideration the way it would be on a battery.
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
