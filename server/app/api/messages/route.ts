@@ -2,6 +2,7 @@
 
 import { senderAuthorized } from "@/lib/auth";
 import { create, listAll, put } from "@/lib/store";
+import { toPanelText } from "@/lib/text";
 import { MESSAGE_TYPES, type MessageInput, type MessageType } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -30,7 +31,9 @@ export async function POST(req: Request) {
   }
 
   const input = body as Partial<MessageInput>;
-  const text = typeof input.text === "string" ? input.text.trim() : "";
+  /* Normalised before the length check, so the limit counts what the panel
+   * will actually be asked to draw. */
+  const text = typeof input.text === "string" ? toPanelText(input.text).trim() : "";
   if (!text) {
     return Response.json({ error: "text is required" }, { status: 400 });
   }

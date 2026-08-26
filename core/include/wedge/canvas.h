@@ -6,11 +6,47 @@
 /* A canvas is a linear XRGB8888 buffer. On the device it lives in PSRAM; in the
    simulator it is malloc'd. Nothing in core/ allocates it, so the port decides
    where the memory comes from. */
+/* A canvas is a window onto the frame, not necessarily the whole of it.
+ *
+ * w and h are always the full frame, because every piece of layout is written
+ * against the real panel and must not know whether it is being drawn in one
+ * pass or ten. What px actually covers is the rows [y0, y0 + rows), and every
+ * primitive translates into that window and clips to it.
+ *
+ * A whole-frame canvas is simply the case where y0 is 0 and rows is h. Use
+ * wg_canvas_full to build one rather than an initialiser list, so a canvas
+ * that covers nothing is impossible to construct by forgetting a field. */
 typedef struct {
     uint32_t *px;
     int w;
     int h;
+    int y0;
+    int rows;
 } wg_canvas_t;
+
+static inline wg_canvas_t wg_canvas_full(uint32_t *px, int w, int h)
+{
+    wg_canvas_t c = { px, w, h, 0, h };
+    return c;
+}
+
+static inline wg_canvas_t wg_canvas_band(uint32_t *px, int w, int h, int y0, int rows)
+{
+    wg_canvas_t c = { px, w, h, y0, rows };
+    return c;
+}
+
+/* True when this row is inside the window px covers. */
+static inline int wg_has_row(const wg_canvas_t *c, int y)
+{
+    return y >= c->y0 && y < c->y0 + c->rows;
+}
+
+/* The start of a row, which must be one this canvas actually covers. */
+static inline uint32_t *wg_row_at(const wg_canvas_t *c, int y)
+{
+    return &c->px[(size_t)(y - c->y0) * (size_t)c->w];
+}
 
 /* A gradient stop is a color at a normalized vertical position. */
 typedef struct {

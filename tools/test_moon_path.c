@@ -13,7 +13,7 @@ static int scan(const char *label, float h0, float h1, float phase, uint32_t *px
     wg_scene_t s;
     wg_scene_init(&s, 0xC0FFEEu);
     s.moon_phase = phase;
-    wg_canvas_t cv = { px, WG_W, WG_H };
+    wg_canvas_t cv = wg_canvas_full(px, WG_W, WG_H);
     int lx = -1, ly = -1;
     float worst = 0, worst_at = 0;
 

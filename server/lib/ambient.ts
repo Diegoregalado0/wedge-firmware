@@ -5,6 +5,7 @@
  * there is nothing to reconcile. */
 
 import { del, list, put } from "@vercel/blob";
+import { toPanelText } from "@/lib/text";
 
 const PREFIX = "ambient/";
 const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
@@ -35,7 +36,9 @@ export function sanitize(input: unknown): string[] {
   if (!Array.isArray(input)) return [];
   return input
     .filter((l): l is string => typeof l === "string")
-    .map((l) => l.trim().replace(/\s+/g, " "))
+    /* Normalised before the length cap, so the cap counts glyphs the panel
+       can actually draw rather than bytes it will silently skip. */
+    .map((l) => toPanelText(l).trim().replace(/\s+/g, " "))
     .filter((l) => l.length > 0)
     .map((l) => l.slice(0, AMBIENT_TEXT_MAX))
     .slice(0, AMBIENT_MAX);

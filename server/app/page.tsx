@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { toPanelText } from "@/lib/text";
 import { type Message, type MessageType } from "@/lib/types";
 
 const KICKERS: Record<MessageType, string> = {
@@ -42,9 +43,12 @@ export default function Page() {
   /* Everything from this device is from the same person, so the kicker is
      fixed rather than chosen every time. */
   const type: MessageType = "affection";
+
   const [when, setWhen] = useState("");
-  const [scheduling, setScheduling] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  /* The last set known to be on the server. Saving compares against this, so
+     the button can be honest about whether anything is actually pending. */
+  const [savedLines, setSavedLines] = useState<string[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [lines, setLines] = useState<string[]>([]);
   const [linesBusy, setLinesBusy] = useState(false);
@@ -52,8 +56,15 @@ export default function Page() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  const remaining = 280 - text.length;
+  /* The preview and the counter both run the panel's own normalisation, so
+     what is counted and shown is what the device will be asked to draw. */
+  const panelText = useMemo(() => toPanelText(text), [text]);
+  const remaining = 280 - panelText.length;
   const overlong = remaining < 0;
+  const linesDirty = useMemo(
+    () => lines.length !== savedLines.length || lines.some((l, i) => l !== savedLines[i]),
+    [lines, savedLines],
+  );
 
   async function refresh() {
     const res = await fetch("/api/messages");
@@ -69,6 +80,7 @@ export default function Page() {
     if (amb.ok) {
       const a = (await amb.json()) as { lines: string[] };
       setLines(a.lines);
+      setSavedLines(a.lines);
     }
   }
 
@@ -88,6 +100,7 @@ export default function Page() {
     }
     const data = (await res.json()) as { lines: string[] };
     setLines(data.lines);
+    setSavedLines(data.lines);
     setLinesNote("Saved. The wedge picks these up within five minutes.");
   }
 
@@ -111,13 +124,12 @@ export default function Page() {
     await refresh();
   }
 
-  async function send(e: React.FormEvent) {
-    e.preventDefault();
+  async function send(e?: React.FormEvent) {
+    e?.preventDefault();
     if (overlong || !text.trim()) return;
     setBusy(true);
     setError("");
-    const available_at =
-      scheduling && when ? Math.floor(new Date(when).getTime() / 1000) : undefined;
+    const available_at = when ? Math.floor(new Date(when).getTime() / 1000) : undefined;
     const res = await fetch("/api/messages", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -131,7 +143,6 @@ export default function Page() {
     }
     setText("");
     setWhen("");
-    setScheduling(false);
     await refresh();
   }
 
@@ -173,7 +184,7 @@ export default function Page() {
         </p>
       </header>
 
-      <Preview text={text} type={type} />
+      <Preview text={panelText} type={type} />
 
       <form onSubmit={send} className="composer">
         <label>
@@ -190,58 +201,26 @@ export default function Page() {
           </small>
         </label>
 
-        {scheduling ? (
-          <label>
-            <span>Send at</span>
-            <input
-              type="datetime-local"
-              value={when}
-              onChange={(e) => setWhen(e.target.value)}
-              autoFocus
-            />
-          </label>
-        ) : null}
-
         {/* Sending now is the whole point, so it is the button. Scheduling is
-            behind the caret because it is the rare case, and a date field
-            sitting on screen with nothing in it invites the question of
-            whether it needs filling in. */}
+            the rare case and opens a dialog, because a date field parked on
+            screen with nothing in it invites the question of whether it needs
+            filling in. */}
         <div className="send">
-          <button type="submit" className="send-main" disabled={busy || overlong || !text.trim() || (scheduling && !when)}>
-            {busy ? "Sending" : scheduling ? "Schedule" : "Send now"}
+          <button
+            type="submit"
+            className="send-main"
+            disabled={busy || overlong || !text.trim()}
+          >
+            {busy ? "Sending" : "Send now"}
           </button>
           <button
             type="button"
-            className="send-more"
-            aria-label="Delivery options"
-            aria-expanded={menuOpen}
-            onClick={() => setMenuOpen((v) => !v)}
+            className="send-schedule"
+            onClick={() => setScheduleOpen(true)}
+            disabled={busy || overlong || !text.trim()}
           >
-            &#9662;
+            Schedule
           </button>
-          {menuOpen ? (
-            <div className="send-menu">
-              <button
-                type="button"
-                onClick={() => {
-                  setScheduling(false);
-                  setWhen("");
-                  setMenuOpen(false);
-                }}
-              >
-                Send now
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setScheduling(true);
-                  setMenuOpen(false);
-                }}
-              >
-                Send later
-              </button>
-            </div>
-          ) : null}
         </div>
         {error ? <p className="error">{error}</p> : null}
       </form>
@@ -271,19 +250,77 @@ export default function Page() {
             </li>
           ))}
         </ul>
-        <div className="field-row">
+        {/* Apart, because they do opposite things and sat close enough to be
+            hit by accident. Saving stays unavailable until there is an actual
+            change to save, so the button says whether anything is pending
+            rather than always looking the same. */}
+        <div className="lines-actions">
           <button
+            type="button"
+            className="ghost"
             onClick={() => setLines([...lines, ""])}
             disabled={lines.length >= 12 || linesBusy}
           >
             Add a line
           </button>
-          <button className="primary" onClick={() => void saveLines(lines)} disabled={linesBusy}>
-            {linesBusy ? "Saving" : "Save lines"}
+          <button
+            type="button"
+            className="primary"
+            onClick={() => void saveLines(lines)}
+            disabled={linesBusy || !linesDirty}
+          >
+            {linesBusy ? "Saving" : linesDirty ? "Save changes" : "Saved"}
           </button>
         </div>
         {linesNote ? <p className="muted">{linesNote}</p> : null}
       </section>
+
+      {scheduleOpen ? (
+        <div
+          className="scrim"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Schedule this message"
+          onClick={() => setScheduleOpen(false)}
+        >
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h2>Schedule</h2>
+            <p className="muted">It stays hidden until this time, then waits on her table.</p>
+            <label>
+              <span>Send at</span>
+              <input
+                type="datetime-local"
+                value={when}
+                onChange={(e) => setWhen(e.target.value)}
+                autoFocus
+              />
+            </label>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => {
+                  setWhen("");
+                  setScheduleOpen(false);
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="primary"
+                disabled={!when || busy}
+                onClick={() => {
+                  setScheduleOpen(false);
+                  void send();
+                }}
+              >
+                Schedule it
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <section className="history">
         <h2>Sent</h2>

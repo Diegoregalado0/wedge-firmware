@@ -632,6 +632,16 @@ void wg_app_tick(wg_app_t *a, float dt)
     wg_app_step_brightness(a);
 }
 
+bool wg_app_needs_full_frame(const wg_app_t *a)
+{
+    if (!a->config.glass_blur) {
+        return false;
+    }
+    /* Glass is on screen whenever a card is up, or an offer is being made, or
+       either is on its way in or out. */
+    return a->card.value > 0.001f || a->indicator.value > 0.001f;
+}
+
 void wg_app_render(wg_app_t *a, wg_canvas_t *c)
 {
     if (a->state == WG_ST_PROVISIONING) {

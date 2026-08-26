@@ -68,7 +68,7 @@ static void settle(wg_app_t *a, wg_canvas_t *cv, fake_t *fk, float seconds)
 static void capture_motion(const char *outdir)
 {
     uint32_t *px = malloc((size_t)WG_W * WG_H * 4);
-    wg_canvas_t cv = { px, WG_W, WG_H };
+    wg_canvas_t cv = wg_canvas_full(px, WG_W, WG_H);
 
     fake_t fk;
     memset(&fk, 0, sizeof(fk));
@@ -137,7 +137,7 @@ static void capture_motion(const char *outdir)
 static void capture_boot(const char *outdir)
 {
     uint32_t *px = malloc((size_t)WG_W * WG_H * 4);
-    wg_canvas_t cv = { px, WG_W, WG_H };
+    wg_canvas_t cv = wg_canvas_full(px, WG_W, WG_H);
 
     fake_t fk;
     memset(&fk, 0, sizeof(fk));
@@ -192,7 +192,7 @@ int main(int argc, char **argv)
     const char *outdir = argc > 1 ? argv[1] : ".";
 
     uint32_t *px = malloc((size_t)WG_W * WG_H * 4);
-    wg_canvas_t cv = { px, WG_W, WG_H };
+    wg_canvas_t cv = wg_canvas_full(px, WG_W, WG_H);
 
     struct {
         const char *name;

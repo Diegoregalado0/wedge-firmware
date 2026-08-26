@@ -400,3 +400,86 @@ button:disabled {
 .send-menu button:hover {
   background: rgba(255, 255, 255, 0.06);
 }
+
+/* Send: one obvious action, with scheduling beside it rather than hidden
+   inside it. Sending now needs no explanation, so it gets the width. */
+.send {
+  display: flex;
+  gap: 10px;
+}
+
+.send-main {
+  flex: 1;
+}
+
+.send-schedule {
+  flex: 0 0 auto;
+  background: transparent;
+  color: var(--ink-2);
+  border: 1px solid var(--line);
+}
+
+.send-schedule:disabled {
+  opacity: 0.4;
+}
+
+/* Scheduling opens a dialog. It is a decision with its own question to answer,
+   and answering it inline left an empty date field on screen looking required. */
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.62);
+}
+
+.modal {
+  width: 100%;
+  max-width: 380px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 22px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+
+.modal h2 {
+  margin: 0;
+  font-size: 19px;
+}
+
+.modal p {
+  margin: 0;
+  font-size: 14px;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.modal-actions button {
+  flex: 1;
+}
+
+/* Adding a line and saving the set do opposite things; they were close enough
+   to hit by accident. */
+.lines-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 32px;
+  margin-top: 18px;
+}
+
+button.ghost {
+  background: transparent;
+  color: var(--ink-2);
+  border: 1px solid var(--line);
+}

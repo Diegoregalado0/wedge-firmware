@@ -275,6 +275,14 @@ static void draw_clouds(wg_canvas_t *c, const wg_scene_t *s, float alt, float fa
         float amp = 5.0f + (float)band * 2.0f;
         float thick = 7.0f + (float)band * 3.0f;
         float alpha = a * (0.16f - 0.03f * (float)band);
+        /* The band's whole vertical reach, checked once. Drawn a slice at a
+           time this loop runs per slice, and its per-column trigonometry is
+           the most expensive thing in the scene to repeat needlessly. */
+        float lo = base_y - amp * 1.5f;
+        float hi = base_y + amp * 1.5f + thick;
+        if (hi < (float)c->y0 || lo >= (float)(c->y0 + c->rows)) {
+            continue;
+        }
         for (int x = 0; x < WG_W; x++) {
             float fx = (float)x + s->t * speed;
             float y = base_y + amp * sinf(fx * 0.0091f + (float)band) + amp * 0.5f * sinf(fx * 0.0217f);
@@ -317,6 +325,9 @@ void wg_scene_draw(wg_canvas_t *c, const wg_scene_t *s)
     if (night > 0.01f) {
         for (int i = 0; i < WG_STARS; i++) {
             const wg_star_t *st = &s->stars[i];
+            if (st->y < (float)c->y0 - 2.0f || st->y >= (float)(c->y0 + c->rows) + 2.0f) {
+                continue;
+            }
             float tw = 0.72f + 0.28f * sinf(s->t * 1.6f + st->twinkle);
             float a = night * st->mag * tw * fade;
             if (a <= 0.02f) {
@@ -405,6 +416,9 @@ void wg_scene_draw(wg_canvas_t *c, const wg_scene_t *s)
     float mote_a = wg_lerpf(0.5f, 0.22f, wg_smooth(-0.2f, 0.5f, alt)) * fade;
     for (int i = 0; i < WG_PARTICLES; i++) {
         const wg_mote_t *m = &s->motes[i];
+        if (m->y < (float)c->y0 - m->r - 2.0f || m->y >= (float)(c->y0 + c->rows) + m->r + 2.0f) {
+            continue;
+        }
         float pulse = 0.55f + 0.45f * sinf(m->phase);
         unsigned a = (unsigned)(255.0f * mote_a * pulse * m->life);
         if (a < 4) {

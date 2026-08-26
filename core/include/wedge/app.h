@@ -201,6 +201,14 @@ void wg_app_tick(wg_app_t *a, float dt);
 
 void wg_app_render(wg_app_t *a, wg_canvas_t *c);
 
+/* True when this frame cannot be drawn a band at a time.
+ *
+ * Everything in the compositor works on one row at a time except the backdrop
+ * blur, whose vertical pass reads rows either side of the one it is writing.
+ * Given a slice of the frame it would sample rows it does not have and leave a
+ * seam at every slice boundary, so a frame with glass in it is drawn whole. */
+bool wg_app_needs_full_frame(const wg_app_t *a);
+
 /* Reading and editing the standing lines. Every mutation persists through the
    host, so the bank survives a power cut without the caller remembering to
    save. An empty bank falls back to the built-in set rather than showing

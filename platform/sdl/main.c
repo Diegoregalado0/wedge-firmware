@@ -139,7 +139,7 @@ int main(int argc, char **argv)
 
     uint32_t *pixels = (uint32_t *)malloc((size_t)WG_W * WG_H * sizeof(uint32_t));
     uint16_t *panel = (uint16_t *)malloc((size_t)WG_W * WG_H * sizeof(uint16_t));
-    wg_canvas_t canvas = { pixels, WG_W, WG_H };
+    wg_canvas_t canvas = wg_canvas_full(pixels, WG_W, WG_H);
 
     sim_t sim;
     memset(&sim, 0, sizeof(sim));

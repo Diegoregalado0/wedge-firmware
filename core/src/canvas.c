@@ -16,7 +16,7 @@ wg_color wg_color_mix(wg_color a, wg_color b, float t)
 void wg_clear(wg_canvas_t *c, wg_color color)
 {
     uint32_t v = color | 0xFF000000u;
-    size_t n = (size_t)c->w * (size_t)c->h;
+    size_t n = (size_t)c->w * (size_t)c->rows;
     for (size_t i = 0; i < n; i++) {
         c->px[i] = v;
     }
@@ -54,10 +54,10 @@ static inline void wg_blend_at(uint32_t *p, unsigned cr, unsigned cg, unsigned c
 
 void wg_blend(wg_canvas_t *c, int x, int y, wg_color color)
 {
-    if (x < 0 || y < 0 || x >= c->w || y >= c->h) {
+    if (x < 0 || x >= c->w || !wg_has_row(c, y)) {
         return;
     }
-    wg_blend_at(&c->px[(size_t)y * c->w + x], WG_R(color), WG_G(color), WG_B(color), WG_A(color));
+    wg_blend_at(wg_row_at(c, y) + x, WG_R(color), WG_G(color), WG_B(color), WG_A(color));
 }
 
 void wg_fill_rect(wg_canvas_t *c, int x, int y, int w, int h, wg_color color)
@@ -80,10 +80,20 @@ void wg_gradient_v(wg_canvas_t *c, int y0, int y1, const wg_stop_t *stops, int n
     }
     int span = y1 - y0;
     int seg = 0;
-    for (int y = y0; y < y1; y++) {
-        if (y < 0 || y >= c->h) {
-            continue;
-        }
+    /* Clipped to the window before the loop rather than inside it. Drawn a
+       band at a time this runs once per band, and skipping row by row would
+       walk the whole ramp ten times over to fill a tenth of it. The segment
+       cursor is seeded for the first row actually drawn, since it only ever
+       moves forward. */
+    int ys = y0 > c->y0 ? y0 : c->y0;
+    int ye = y1 < c->y0 + c->rows ? y1 : c->y0 + c->rows;
+    if (ys < 0) {
+        ys = 0;
+    }
+    if (ye > c->h) {
+        ye = c->h;
+    }
+    for (int y = ys; y < ye; y++) {
         float t = (float)(y - y0) / (float)span;
         while (seg < n - 2 && t > stops[seg + 1].pos) {
             seg++;
@@ -98,7 +108,7 @@ void wg_gradient_v(wg_canvas_t *c, int y0, int y1, const wg_stop_t *stops, int n
             col = wg_color_mix(stops[seg].color, stops[seg + 1].color, wg_clampf(lt, 0.0f, 1.0f));
         }
         uint32_t v = col | 0xFF000000u;
-        uint32_t *row = &c->px[(size_t)y * c->w];
+        uint32_t *row = wg_row_at(c, y);
         for (int x = 0; x < c->w; x++) {
             row[x] = v;
         }
@@ -142,8 +152,8 @@ void wg_glow(wg_canvas_t *c, float cx, float cy, float r, wg_color color, float 
     }
     int x0 = wg_clampi((int)(cx - r), 0, c->w);
     int x1 = wg_clampi((int)(cx + r) + 1, 0, c->w);
-    int y0 = wg_clampi((int)(cy - r), 0, c->h);
-    int y1 = wg_clampi((int)(cy + r) + 1, 0, c->h);
+    int y0 = wg_clampi((int)(cy - r), c->y0, c->y0 + c->rows);
+    int y1 = wg_clampi((int)(cy + r) + 1, c->y0, c->y0 + c->rows);
 
     /* The falloff depends on nothing but distance, so it is tabulated once per
        call instead of evaluated per pixel. This was the single most expensive
@@ -164,9 +174,12 @@ void wg_glow(wg_canvas_t *c, float cx, float cy, float r, wg_color color, float 
     const unsigned cr = WG_R(color), cg = WG_G(color), cb = WG_B(color);
     const float inv2 = 1.0f / (r * r);
     for (int y = y0; y < y1; y++) {
+        if (!wg_has_row(c, y)) {
+            continue;
+        }
         float dy = (float)y + 0.5f - cy;
         float dy2 = dy * dy;
-        uint32_t *row = &c->px[(size_t)y * c->w];
+        uint32_t *row = wg_row_at(c, y);
         for (int x = x0; x < x1; x++) {
             float dx = (float)x + 0.5f - cx;
             float q = (dx * dx + dy2) * inv2;
@@ -211,10 +224,19 @@ void wg_fill_under(wg_canvas_t *c, const float *height, int n, wg_color color)
            they are all the same colour: hoisting the clamp and the row
            multiply out of the loop leaves only the blend itself. */
         int ys = y0 + 1 < 0 ? 0 : y0 + 1;
+        if (ys < c->y0) {
+            ys = c->y0;
+        }
+        int ye = c->y0 + c->rows;
+        if (ye > c->h) {
+            ye = c->h;
+        }
         const unsigned cr = WG_R(color), cg = WG_G(color), cb = WG_B(color), ca = WG_A(color);
-        uint32_t *p = &c->px[(size_t)ys * c->w + x];
-        for (int y = ys; y < c->h; y++, p += c->w) {
-            wg_blend_at(p, cr, cg, cb, ca);
+        if (ys < ye) {
+            uint32_t *p = wg_row_at(c, ys) + x;
+            for (int y = ys; y < ye; y++, p += c->w) {
+                wg_blend_at(p, cr, cg, cb, ca);
+            }
         }
     }
 }
@@ -398,7 +420,10 @@ void wg_refract(wg_canvas_t *c, float x, float y, float w, float h, float r, flo
     }
 
     for (int py = y0; py < y1; py++) {
-        uint32_t *row = &c->px[(size_t)py * c->w];
+        if (!wg_has_row(c, py)) {
+            continue;
+        }
+        uint32_t *row = wg_row_at(c, py);
         memcpy(s_blur_line, &row[x0], (size_t)span * 4);
         for (int px = x0; px < x1; px++) {
             float d = rrect_sd((float)px + 0.5f, (float)py + 0.5f, cx, cy, hw, hh, r);
@@ -561,7 +586,10 @@ static void blur_rrect_once(wg_canvas_t *c, float x, float y, float w, float h, 
         if (ib <= ia) {
             continue;
         }
-        uint32_t *row = &c->px[(size_t)py * c->w];
+        if (!wg_has_row(c, py)) {
+            continue;
+        }
+        uint32_t *row = wg_row_at(c, py);
         memcpy(s_blur_line, &row[rx0], (size_t)rw * 4);
 
         unsigned sr = 0, sg = 0, sb = 0;
@@ -593,7 +621,7 @@ static void blur_rrect_once(wg_canvas_t *c, float x, float y, float w, float h, 
     for (int k = 0; k < span; k++) {
         int sy = wg_clampi(k - radius, 0, rh - 1);
         uint32_t *slot = &s_blur_ring[(size_t)k * WG_W];
-        memcpy(slot, &c->px[(size_t)(ry0 + sy) * c->w + rx0], (size_t)rw * 4);
+        memcpy(slot, wg_row_at(c, ry0 + sy) + rx0, (size_t)rw * 4);
         for (int i = 0; i < rw; i++) {
             uint32_t p = slot[i];
             s_acc_r[i] += (p >> 16) & 0xFF;
@@ -608,7 +636,10 @@ static void blur_rrect_once(wg_canvas_t *c, float x, float y, float w, float h, 
         if (half >= 0.0f) {
             int ia = wg_clampi((int)floorf(cx - half), rx0, rx1);
             int ib = wg_clampi((int)ceilf(cx + half), rx0, rx1);
-            uint32_t *row = &c->px[(size_t)py * c->w];
+            if (!wg_has_row(c, py)) {
+            continue;
+        }
+        uint32_t *row = wg_row_at(c, py);
             for (int px = ia; px < ib; px++) {
                 int i = px - rx0;
                 row[px] = 0xFF000000u | ((s_acc_r[i] / n) << 16) | ((s_acc_g[i] / n) << 8) |
@@ -624,7 +655,7 @@ static void blur_rrect_once(wg_canvas_t *c, float x, float y, float w, float h, 
             s_acc_g[i] -= (o >> 8) & 0xFF;
             s_acc_b[i] -= o & 0xFF;
         }
-        memcpy(slot, &c->px[(size_t)(ry0 + fetch) * c->w + rx0], (size_t)rw * 4);
+        memcpy(slot, wg_row_at(c, ry0 + fetch) + rx0, (size_t)rw * 4);
         for (int i = 0; i < rw; i++) {
             uint32_t p = slot[i];
             s_acc_r[i] += (p >> 16) & 0xFF;
@@ -654,7 +685,7 @@ void wg_blur_rrect(wg_canvas_t *c, float x, float y, float w, float h, float r, 
 void wg_dim(wg_canvas_t *c, float amount)
 {
     float k = wg_clampf(1.0f - amount, 0.0f, 1.0f);
-    size_t n = (size_t)c->w * (size_t)c->h;
+    size_t n = (size_t)c->w * (size_t)c->rows;
     for (size_t i = 0; i < n; i++) {
         uint32_t d = c->px[i];
         unsigned r = (unsigned)(((d >> 16) & 0xFF) * k);
@@ -681,7 +712,7 @@ void wg_to_rgb565_rows(const wg_canvas_t *c, uint16_t *out, int y0, int rows)
 {
     const int w = c->w;
     for (int y = y0; y < y0 + rows; y++) {
-        const uint32_t *row = &c->px[(size_t)y * w];
+        const uint32_t *row = wg_row_at(c, y);
         /* Indexed from the band's own start, but dithered by absolute y: the
            Bayer threshold has to keep its phase across a band boundary or the
            seams become visible lines in a gradient. */

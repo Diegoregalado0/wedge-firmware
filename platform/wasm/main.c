@@ -84,7 +84,7 @@ void wedge_tick(float dt, double clock_step)
     s_unix += clock_step;
     s_ms += (uint64_t)(dt * 1000.0f);
 
-    wg_canvas_t canvas = { s_canvas, WG_W, WG_H };
+    wg_canvas_t canvas = wg_canvas_full(s_canvas, WG_W, WG_H);
     wg_app_tick(&s_app, dt);
     wg_app_render(&s_app, &canvas);
     wg_to_rgb565(&canvas, s_panel);

@@ -392,7 +392,7 @@ static void ui_task(void *arg)
         xTaskCreatePinnedToCore(net_task, "net", 8192, NULL, 4, NULL, 0);
     }
 
-    wg_canvas_t canvas = { s_canvas, WG_W, WG_H };
+    wg_canvas_t canvas = wg_canvas_full(s_canvas, WG_W, WG_H);
     uint64_t last = (uint64_t)(esp_timer_get_time() / 1000);
 
     for (;;) {
@@ -419,6 +419,27 @@ static void ui_task(void *arg)
 
         wg_app_tick(&app, dt);
 
+        /* Two ways to produce a frame, and the difference is where the pixels
+           live while they are being worked on.
+
+           A frame with glass in it is composed whole, in PSRAM, because the
+           blur behind the glass reads rows either side of the one it writes.
+           Everything else is composed a band at a time into internal memory,
+           which has no miss penalty: the same arithmetic against SRAM instead
+           of PSRAM, and the conversion that follows reads pixels that are
+           already in cache because they were written moments ago. */
+        /* Composed whole, in PSRAM.
+    
+           Drawing this a band at a time into internal memory was tried and
+           measured: 224 ms a frame against 104 ms for this, and it exhausted
+           the internal heap so thoroughly that TLS could no longer allocate a
+           session. Both problems have the same cause. The compositor is built
+           out of whole-frame primitives, so producing ten slices means ten
+           passes over every glyph, every column of land and every cloud in
+           order to keep a tenth of each, and the repeated setup costs far more
+           than the cache misses it avoids. Making it pay would need the
+           primitives themselves rewritten to be slice-native, which is a
+           different project from moving the buffer. */
         wg_app_render(&app, &canvas);
         /* Converted and pushed a band at a time. The dither reads absolute y,
            so the bands are seamless. */
@@ -428,11 +449,6 @@ static void ui_task(void *arg)
             rm67162_blit_rows(s_band, y0, rows);
         }
 
-        /* Section 23 asks for 5 to 15 FPS on decorative animation, but the
-           gesture path needs more than that to track a finger honestly. The
-           compromise is to run fast while something is moving and idle down
-           when the scene is at rest, which is also what keeps a sealed shell
-           from cooking an always-on S3. */
         /* Nothing held back while something is moving: a frame already costs
            most of a tick, so an added delay there is pure lost frame rate.
            The idle pause stays, because a clock that is not being touched has
