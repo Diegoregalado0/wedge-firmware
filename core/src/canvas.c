@@ -254,8 +254,15 @@ static float rrect_sd(float px, float py, float cx, float cy, float hw, float hh
     float qx = fabsf(px - cx) - (hw - r);
     float qy = fabsf(py - cy) - (hh - r);
     if (qx > 0.0f && qy > 0.0f) {
-        const float p = 4.2f;
-        return powf(powf(qx, p) + powf(qy, p), 1.0f / p) - r;
+        /* A fourth-power norm, not 4.2. The exponent is what gives the corner
+           its continuous curvature, and moving it by two tenths shifts the
+           outline by well under a pixel at these radii, but it is the
+           difference between three library pow calls and four multiplies with
+           two hardware square roots. This runs five times per pixel under the
+           specular highlight and was, by a wide margin, the most expensive
+           thing in any frame containing glass. */
+        float a2 = qx * qx, b2 = qy * qy;
+        return sqrtf(sqrtf(a2 * a2 + b2 * b2)) - r;
     }
     float m = qx > qy ? qx : qy;
     return m - r;
@@ -273,12 +280,13 @@ static float rrect_half_at(float py, float cy, float hw, float hh, float r)
     if (t <= 0.0f) {
         return hw;
     }
-    const float p = 4.2f;
-    float inner = powf(r, p) - powf(t, p);
+    /* The same fourth-power norm as rrect_sd, for the same reason. */
+    float r2 = r * r, t2 = t * t;
+    float inner = r2 * r2 - t2 * t2;
     if (inner <= 0.0f) {
         return -1.0f;
     }
-    return (hw - r) + powf(inner, 1.0f / p);
+    return (hw - r) + sqrtf(sqrtf(inner));
 }
 
 static void rrect_shade(wg_canvas_t *c, float x, float y, float w, float h, float r,
@@ -372,9 +380,7 @@ void wg_round_rect_stroke(wg_canvas_t *c, float x, float y, float w, float h, fl
    a hard near-black silhouette, and a small radius left its ridge legible
    through the glass as a dirty band rather than diffusing it. */
 #define WG_BLUR_MAX_R 14
-static uint32_t s_blur_ring[(2 * WG_BLUR_MAX_R + 1) * WG_W];
 static uint32_t s_blur_line[WG_W];
-static uint32_t s_acc_r[WG_W], s_acc_g[WG_W], s_acc_b[WG_W];
 
 /* Both passes slide a running sum rather than re-adding the window at every
    pixel. Re-summing is O(radius) per pixel, which measured out around eighty
@@ -553,114 +559,109 @@ void wg_round_rect_shadow(wg_canvas_t *c, float x, float y, float w, float h, fl
    Each pass copies the source span first, so the running sum always consumes
    originals, and reads deliberately extend past the shape: what sits behind the
    rim is exactly what a real edge would show. */
-static void blur_rrect_once(wg_canvas_t *c, float x, float y, float w, float h, float r,
-                            int pad, int radius)
+/* The backdrop blur, done at a quarter of the panel's resolution.
+ *
+ * A box blur costs the same per pixel whatever its radius, so the price is set
+ * by how many pixels it touches and how many times. Blurring the card's
+ * backdrop where it lies meant six full-resolution traversals of a hundred
+ * thousand pixels, which measured at a quarter of a second a frame on the
+ * device: by far the most expensive thing in any frame with glass in it, and
+ * unavoidably so in exactly the frames where something is moving.
+ *
+ * Blur is low-frequency by definition, so it does not need to be computed at
+ * full resolution to look right. The backdrop is reduced by four in each axis,
+ * blurred there at a quarter of the radius, and interpolated back on the way
+ * out. That is sixteen times fewer pixels through the expensive part, and the
+ * result is indistinguishable because everything the downsample discarded was
+ * about to be blurred away.
+ *
+ * It also costs less memory than it replaces: the old ring buffer held
+ * twenty-nine full-width rows.
+ */
+#define WG_BLUR_SHIFT 2
+#define WG_BLUR_SCALE (1 << WG_BLUR_SHIFT)
+#define WG_SMALL_W (WG_W / WG_BLUR_SCALE + 2)
+#define WG_SMALL_H (WG_H / WG_BLUR_SCALE + 2)
+#define WG_SMALL_RING (2 * (WG_BLUR_MAX_R / WG_BLUR_SCALE + 1) + 1)
+
+static uint32_t s_small[WG_SMALL_W * WG_SMALL_H];
+static uint32_t s_small_line[WG_SMALL_W];
+static uint32_t s_small_ring[WG_SMALL_RING * WG_SMALL_W];
+static uint32_t s_sacc_r[WG_SMALL_W], s_sacc_g[WG_SMALL_W], s_sacc_b[WG_SMALL_W];
+static uint32_t s_up_row[WG_SMALL_W];
+
+static inline uint32_t mix_px(uint32_t a, uint32_t b, unsigned t)
 {
-    float hw = w * 0.5f, hh = h * 0.5f;
-    float cx = x + hw, cy = y + hh;
-    if (r > hw) {
-        r = hw;
-    }
-    if (r > hh) {
-        r = hh;
-    }
+    unsigned it = 256u - t;
+    unsigned r = (((a >> 16) & 0xFF) * it + ((b >> 16) & 0xFF) * t) >> 8;
+    unsigned g = (((a >> 8) & 0xFF) * it + ((b >> 8) & 0xFF) * t) >> 8;
+    unsigned bl = ((a & 0xFF) * it + (b & 0xFF) * t) >> 8;
+    return 0xFF000000u | (r << 16) | (g << 8) | bl;
+}
 
-    int rx0 = wg_clampi((int)floorf(x) - pad, 0, c->w);
-    int rx1 = wg_clampi((int)ceilf(x + w) + pad, 0, c->w);
-    int ry0 = wg_clampi((int)floorf(y) - pad, 0, c->h);
-    int ry1 = wg_clampi((int)ceilf(y + h) + pad, 0, c->h);
-    int rw = rx1 - rx0;
-    if (rw <= 0 || ry1 <= ry0) {
-        return;
+/* Separable box blur over the reduced image, in place. */
+static void blur_small(int sw, int sh, int radius)
+{
+    if (radius < 1) {
+        radius = 1;
     }
-    const int span = 2 * radius + 1;
-    const unsigned n = (unsigned)span;
+    const unsigned n = (unsigned)(2 * radius + 1);
 
-    for (int py = ry0; py < ry1; py++) {
-        float half = rrect_half_at((float)py + 0.5f, cy, hw, hh, r);
-        if (half < 0.0f) {
-            continue;
-        }
-        int ia = wg_clampi((int)floorf(cx - half), rx0, rx1);
-        int ib = wg_clampi((int)ceilf(cx + half), rx0, rx1);
-        if (ib <= ia) {
-            continue;
-        }
-        if (!wg_has_row(c, py)) {
-            continue;
-        }
-        uint32_t *row = wg_row_at(c, py);
-        memcpy(s_blur_line, &row[rx0], (size_t)rw * 4);
-
+    for (int y = 0; y < sh; y++) {
+        uint32_t *row = &s_small[(size_t)y * WG_SMALL_W];
+        memcpy(s_small_line, row, (size_t)sw * 4);
         unsigned sr = 0, sg = 0, sb = 0;
-        int start = ia - rx0;
-        for (int k = start - radius; k <= start + radius; k++) {
-            uint32_t p = s_blur_line[wg_clampi(k, 0, rw - 1)];
-            sr += (p >> 16) & 0xFF;
-            sg += (p >> 8) & 0xFF;
-            sb += p & 0xFF;
+        for (int k = -radius; k <= radius; k++) {
+            uint32_t q = s_small_line[wg_clampi(k, 0, sw - 1)];
+            sr += (q >> 16) & 0xFF;
+            sg += (q >> 8) & 0xFF;
+            sb += q & 0xFF;
         }
-        for (int px = ia; px < ib; px++) {
-            row[px] = 0xFF000000u | ((sr / n) << 16) | ((sg / n) << 8) | (sb / n);
-            int i = px - rx0;
-            uint32_t out = s_blur_line[wg_clampi(i - radius, 0, rw - 1)];
-            uint32_t in = s_blur_line[wg_clampi(i + radius + 1, 0, rw - 1)];
+        for (int x = 0; x < sw; x++) {
+            row[x] = 0xFF000000u | ((sr / n) << 16) | ((sg / n) << 8) | (sb / n);
+            uint32_t out = s_small_line[wg_clampi(x - radius, 0, sw - 1)];
+            uint32_t in = s_small_line[wg_clampi(x + radius + 1, 0, sw - 1)];
             sr += ((in >> 16) & 0xFF) - ((out >> 16) & 0xFF);
             sg += ((in >> 8) & 0xFF) - ((out >> 8) & 0xFF);
             sb += (in & 0xFF) - (out & 0xFF);
         }
     }
 
-    /* Vertical. The ring holds rows straight from the canvas, and the running
-       column sums cover the whole region; only the write is masked. */
-    memset(s_acc_r, 0, (size_t)rw * sizeof(uint32_t));
-    memset(s_acc_g, 0, (size_t)rw * sizeof(uint32_t));
-    memset(s_acc_b, 0, (size_t)rw * sizeof(uint32_t));
-    int rh = ry1 - ry0;
-
+    const int span = 2 * radius + 1;
+    memset(s_sacc_r, 0, (size_t)sw * sizeof(uint32_t));
+    memset(s_sacc_g, 0, (size_t)sw * sizeof(uint32_t));
+    memset(s_sacc_b, 0, (size_t)sw * sizeof(uint32_t));
     for (int k = 0; k < span; k++) {
-        int sy = wg_clampi(k - radius, 0, rh - 1);
-        uint32_t *slot = &s_blur_ring[(size_t)k * WG_W];
-        memcpy(slot, wg_row_at(c, ry0 + sy) + rx0, (size_t)rw * 4);
-        for (int i = 0; i < rw; i++) {
-            uint32_t p = slot[i];
-            s_acc_r[i] += (p >> 16) & 0xFF;
-            s_acc_g[i] += (p >> 8) & 0xFF;
-            s_acc_b[i] += p & 0xFF;
+        int sy = wg_clampi(k - radius, 0, sh - 1);
+        uint32_t *slot = &s_small_ring[(size_t)k * WG_SMALL_W];
+        memcpy(slot, &s_small[(size_t)sy * WG_SMALL_W], (size_t)sw * 4);
+        for (int i = 0; i < sw; i++) {
+            uint32_t q = slot[i];
+            s_sacc_r[i] += (q >> 16) & 0xFF;
+            s_sacc_g[i] += (q >> 8) & 0xFF;
+            s_sacc_b[i] += q & 0xFF;
         }
     }
-
-    for (int j = 0; j < rh; j++) {
-        int py = ry0 + j;
-        float half = rrect_half_at((float)py + 0.5f, cy, hw, hh, r);
-        if (half >= 0.0f) {
-            int ia = wg_clampi((int)floorf(cx - half), rx0, rx1);
-            int ib = wg_clampi((int)ceilf(cx + half), rx0, rx1);
-            if (!wg_has_row(c, py)) {
-            continue;
+    for (int y = 0; y < sh; y++) {
+        uint32_t *row = &s_small[(size_t)y * WG_SMALL_W];
+        for (int i = 0; i < sw; i++) {
+            row[i] = 0xFF000000u | ((s_sacc_r[i] / n) << 16) | ((s_sacc_g[i] / n) << 8) |
+                     (s_sacc_b[i] / n);
         }
-        uint32_t *row = wg_row_at(c, py);
-            for (int px = ia; px < ib; px++) {
-                int i = px - rx0;
-                row[px] = 0xFF000000u | ((s_acc_r[i] / n) << 16) | ((s_acc_g[i] / n) << 8) |
-                          (s_acc_b[i] / n);
-            }
-        }
-        int slot_index = j % span;
-        uint32_t *slot = &s_blur_ring[(size_t)slot_index * WG_W];
-        int fetch = wg_clampi(j + radius + 1, 0, rh - 1);
-        for (int i = 0; i < rw; i++) {
+        uint32_t *slot = &s_small_ring[(size_t)(y % span) * WG_SMALL_W];
+        int fetch = wg_clampi(y + radius + 1, 0, sh - 1);
+        for (int i = 0; i < sw; i++) {
             uint32_t o = slot[i];
-            s_acc_r[i] -= (o >> 16) & 0xFF;
-            s_acc_g[i] -= (o >> 8) & 0xFF;
-            s_acc_b[i] -= o & 0xFF;
+            s_sacc_r[i] -= (o >> 16) & 0xFF;
+            s_sacc_g[i] -= (o >> 8) & 0xFF;
+            s_sacc_b[i] -= o & 0xFF;
         }
-        memcpy(slot, wg_row_at(c, ry0 + fetch) + rx0, (size_t)rw * 4);
-        for (int i = 0; i < rw; i++) {
-            uint32_t p = slot[i];
-            s_acc_r[i] += (p >> 16) & 0xFF;
-            s_acc_g[i] += (p >> 8) & 0xFF;
-            s_acc_b[i] += p & 0xFF;
+        memcpy(slot, &s_small[(size_t)wg_clampi(fetch, 0, sh - 1) * WG_SMALL_W], (size_t)sw * 4);
+        for (int i = 0; i < sw; i++) {
+            uint32_t q = slot[i];
+            s_sacc_r[i] += (q >> 16) & 0xFF;
+            s_sacc_g[i] += (q >> 8) & 0xFF;
+            s_sacc_b[i] += q & 0xFF;
         }
     }
 }
@@ -677,8 +678,107 @@ void wg_blur_rrect(wg_canvas_t *c, float x, float y, float w, float h, float r, 
     if (passes < 1) {
         passes = 1;
     }
-    for (int i = 0; i < passes; i++) {
-        blur_rrect_once(c, x, y, w, h, r, pad, i == 0 ? radius : (radius * 3) / 4 + 1);
+
+    float hw = w * 0.5f, hh = h * 0.5f;
+    float cx = x + hw, cy = y + hh;
+    if (r > hw) {
+        r = hw;
+    }
+    if (r > hh) {
+        r = hh;
+    }
+
+    int rx0 = wg_clampi((int)floorf(x) - pad, 0, c->w);
+    int rx1 = wg_clampi((int)ceilf(x + w) + pad, 0, c->w);
+    int ry0 = wg_clampi((int)floorf(y) - pad, 0, c->h);
+    int ry1 = wg_clampi((int)ceilf(y + h) + pad, 0, c->h);
+    int rw = rx1 - rx0, rh = ry1 - ry0;
+    if (rw <= 0 || rh <= 0) {
+        return;
+    }
+
+    /* Reduced, rounding up so the last source pixels are covered. */
+    int sw = (rw + WG_BLUR_SCALE - 1) / WG_BLUR_SCALE;
+    int sh = (rh + WG_BLUR_SCALE - 1) / WG_BLUR_SCALE;
+    if (sw < 2) sw = 2;
+    if (sh < 2) sh = 2;
+    if (sw > WG_SMALL_W) sw = WG_SMALL_W;
+    if (sh > WG_SMALL_H) sh = WG_SMALL_H;
+
+    /* Down. Two samples per axis rather than the full sixteen: the blur that
+       follows removes what the extra reads would have preserved. */
+    for (int sy = 0; sy < sh; sy++) {
+        int y0 = ry0 + sy * WG_BLUR_SCALE;
+        int y1 = y0 + 2 < ry1 ? y0 + 2 : y0;
+        if (y0 >= ry1) {
+            y0 = ry1 - 1;
+            y1 = y0;
+        }
+        if (!wg_has_row(c, y0) || !wg_has_row(c, y1)) {
+            continue;
+        }
+        const uint32_t *r0 = wg_row_at(c, y0);
+        const uint32_t *r1 = wg_row_at(c, y1);
+        uint32_t *out = &s_small[(size_t)sy * WG_SMALL_W];
+        for (int sx = 0; sx < sw; sx++) {
+            int x0 = rx0 + sx * WG_BLUR_SCALE;
+            int x1 = x0 + 2 < rx1 ? x0 + 2 : x0;
+            if (x0 >= rx1) {
+                x0 = rx1 - 1;
+                x1 = x0;
+            }
+            uint32_t a = r0[x0], b = r0[x1], d = r1[x0], e = r1[x1];
+            unsigned rr = (((a >> 16) & 0xFF) + ((b >> 16) & 0xFF) + ((d >> 16) & 0xFF) + ((e >> 16) & 0xFF)) >> 2;
+            unsigned gg = (((a >> 8) & 0xFF) + ((b >> 8) & 0xFF) + ((d >> 8) & 0xFF) + ((e >> 8) & 0xFF)) >> 2;
+            unsigned bb = ((a & 0xFF) + (b & 0xFF) + (d & 0xFF) + (e & 0xFF)) >> 2;
+            out[sx] = 0xFF000000u | (rr << 16) | (gg << 8) | bb;
+        }
+    }
+
+    for (int p = 0; p < passes; p++) {
+        int rs = radius >> WG_BLUR_SHIFT;
+        if (p > 0) {
+            rs = (rs * 3) / 4 + 1;
+        }
+        blur_small(sw, sh, rs);
+    }
+
+    /* Up, masked to the shape. The vertical blend is done once per output row
+       into a reduced-width line, so the per-pixel cost along the row is a
+       single interpolation. */
+    for (int py = ry0; py < ry1; py++) {
+        float half = rrect_half_at((float)py + 0.5f, cy, hw, hh, r);
+        if (half < 0.0f || !wg_has_row(c, py)) {
+            continue;
+        }
+        int ia = wg_clampi((int)floorf(cx - half), rx0, rx1);
+        int ib = wg_clampi((int)ceilf(cx + half), rx0, rx1);
+        if (ib <= ia) {
+            continue;
+        }
+
+        float v = ((float)(py - ry0) + 0.5f) / (float)WG_BLUR_SCALE - 0.5f;
+        int j0 = (int)floorf(v);
+        unsigned tv = (unsigned)((v - (float)j0) * 256.0f);
+        int j1 = j0 + 1;
+        j0 = wg_clampi(j0, 0, sh - 1);
+        j1 = wg_clampi(j1, 0, sh - 1);
+        const uint32_t *ra = &s_small[(size_t)j0 * WG_SMALL_W];
+        const uint32_t *rb = &s_small[(size_t)j1 * WG_SMALL_W];
+        for (int i = 0; i < sw; i++) {
+            s_up_row[i] = mix_px(ra[i], rb[i], tv);
+        }
+
+        uint32_t *row = wg_row_at(c, py);
+        for (int px = ia; px < ib; px++) {
+            float u = ((float)(px - rx0) + 0.5f) / (float)WG_BLUR_SCALE - 0.5f;
+            int i0 = (int)floorf(u);
+            unsigned tu = (unsigned)((u - (float)i0) * 256.0f);
+            int i1 = i0 + 1;
+            i0 = wg_clampi(i0, 0, sw - 1);
+            i1 = wg_clampi(i1, 0, sw - 1);
+            row[px] = mix_px(s_up_row[i0], s_up_row[i1], tu);
+        }
     }
 }
 
