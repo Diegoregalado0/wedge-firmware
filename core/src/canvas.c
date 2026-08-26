@@ -1,0 +1,716 @@
+#include "wedge/canvas.h"
+
+#include <math.h>
+#include <string.h>
+
+wg_color wg_color_mix(wg_color a, wg_color b, float t)
+{
+    t = wg_clampf(t, 0.0f, 1.0f);
+    int r = (int)(WG_R(a) + (WG_R(b) - WG_R(a)) * t);
+    int g = (int)(WG_G(a) + (WG_G(b) - WG_G(a)) * t);
+    int bl = (int)(WG_B(a) + (WG_B(b) - WG_B(a)) * t);
+    int al = (int)(WG_A(a) + (WG_A(b) - WG_A(a)) * t);
+    return WG_RGBA(r, g, bl, al);
+}
+
+void wg_clear(wg_canvas_t *c, wg_color color)
+{
+    uint32_t v = color | 0xFF000000u;
+    size_t n = (size_t)c->w * (size_t)c->h;
+    for (size_t i = 0; i < n; i++) {
+        c->px[i] = v;
+    }
+}
+
+/* Divide by 255 without dividing. The compositor does this three times for
+   every blended pixel and a frame blends well over a hundred thousand of them,
+   so an integer division here is worth several milliseconds a frame on its
+   own. Exact for every value this is ever handed. */
+static inline unsigned wg_mul255(unsigned x)
+{
+    x += 128;
+    return (x + (x >> 8)) >> 8;
+}
+
+/* The blend itself, with the bounds check already done by the caller. Hot
+   loops that walk a row in order should use this and keep their own pointer
+   rather than paying for the clamp and the row multiply per pixel. */
+static inline void wg_blend_at(uint32_t *p, unsigned cr, unsigned cg, unsigned cb, unsigned a)
+{
+    if (a == 0) {
+        return;
+    }
+    if (a >= 255) {
+        *p = 0xFF000000u | (cr << 16) | (cg << 8) | cb;
+        return;
+    }
+    uint32_t d = *p;
+    unsigned ia = 255u - a;
+    unsigned r = wg_mul255(cr * a + ((d >> 16) & 0xFF) * ia);
+    unsigned g = wg_mul255(cg * a + ((d >> 8) & 0xFF) * ia);
+    unsigned b = wg_mul255(cb * a + (d & 0xFF) * ia);
+    *p = 0xFF000000u | (r << 16) | (g << 8) | b;
+}
+
+void wg_blend(wg_canvas_t *c, int x, int y, wg_color color)
+{
+    if (x < 0 || y < 0 || x >= c->w || y >= c->h) {
+        return;
+    }
+    wg_blend_at(&c->px[(size_t)y * c->w + x], WG_R(color), WG_G(color), WG_B(color), WG_A(color));
+}
+
+void wg_fill_rect(wg_canvas_t *c, int x, int y, int w, int h, wg_color color)
+{
+    int x1 = wg_clampi(x + w, 0, c->w);
+    int y1 = wg_clampi(y + h, 0, c->h);
+    x = wg_clampi(x, 0, c->w);
+    y = wg_clampi(y, 0, c->h);
+    for (int j = y; j < y1; j++) {
+        for (int i = x; i < x1; i++) {
+            wg_blend(c, i, j, color);
+        }
+    }
+}
+
+void wg_gradient_v(wg_canvas_t *c, int y0, int y1, const wg_stop_t *stops, int n)
+{
+    if (n <= 0 || y1 <= y0) {
+        return;
+    }
+    int span = y1 - y0;
+    int seg = 0;
+    for (int y = y0; y < y1; y++) {
+        if (y < 0 || y >= c->h) {
+            continue;
+        }
+        float t = (float)(y - y0) / (float)span;
+        while (seg < n - 2 && t > stops[seg + 1].pos) {
+            seg++;
+        }
+        wg_color col;
+        if (n == 1) {
+            col = stops[0].color;
+        } else {
+            float a = stops[seg].pos;
+            float b = stops[seg + 1].pos;
+            float lt = (b - a) > 1e-6f ? (t - a) / (b - a) : 0.0f;
+            col = wg_color_mix(stops[seg].color, stops[seg + 1].color, wg_clampf(lt, 0.0f, 1.0f));
+        }
+        uint32_t v = col | 0xFF000000u;
+        uint32_t *row = &c->px[(size_t)y * c->w];
+        for (int x = 0; x < c->w; x++) {
+            row[x] = v;
+        }
+    }
+}
+
+void wg_disc(wg_canvas_t *c, float cx, float cy, float r, wg_color color)
+{
+    if (r <= 0.0f) {
+        return;
+    }
+    int x0 = (int)floorf(cx - r - 1.0f);
+    int x1 = (int)ceilf(cx + r + 1.0f);
+    int y0 = (int)floorf(cy - r - 1.0f);
+    int y1 = (int)ceilf(cy + r + 1.0f);
+    unsigned base = WG_A(color);
+    for (int y = y0; y <= y1; y++) {
+        for (int x = x0; x <= x1; x++) {
+            float dx = (float)x + 0.5f - cx;
+            float dy = (float)y + 0.5f - cy;
+            float d = sqrtf(dx * dx + dy * dy);
+            /* One pixel of coverage ramp at the edge is enough antialiasing at
+               this pixel density and costs nothing. */
+            float cov = wg_clampf(r + 0.5f - d, 0.0f, 1.0f);
+            if (cov <= 0.0f) {
+                continue;
+            }
+            wg_blend(c, x, y, WG_RGBA(WG_R(color), WG_G(color), WG_B(color), (unsigned)(base * cov)));
+        }
+    }
+}
+
+void wg_glow(wg_canvas_t *c, float cx, float cy, float r, wg_color color, float falloff)
+{
+    if (r <= 0.0f) {
+        return;
+    }
+    unsigned base = WG_A(color);
+    if (base == 0) {
+        return;
+    }
+    int x0 = wg_clampi((int)(cx - r), 0, c->w);
+    int x1 = wg_clampi((int)(cx + r) + 1, 0, c->w);
+    int y0 = wg_clampi((int)(cy - r), 0, c->h);
+    int y1 = wg_clampi((int)(cy + r) + 1, 0, c->h);
+
+    /* The falloff depends on nothing but distance, so it is tabulated once per
+       call instead of evaluated per pixel. This was the single most expensive
+       thing in a frame by a wide margin: the sun's halo is ninety-six pixels
+       across, which is close to thirty thousand pixels, and each one was
+       paying for a square root and a pow that this part has no hardware for.
+       The table is indexed by squared distance, which removes the root as
+       well, and stores the finished alpha so the inner loop has no arithmetic
+       left in it at all. */
+    enum { WG_GLOW_LUT = 512 };
+    uint8_t lut[WG_GLOW_LUT + 1];
+    for (int i = 0; i <= WG_GLOW_LUT; i++) {
+        float q = (float)i / (float)WG_GLOW_LUT;
+        float k = powf(1.0f - sqrtf(q), falloff);
+        lut[i] = (uint8_t)((float)base * wg_clampf(k, 0.0f, 1.0f) + 0.5f);
+    }
+
+    const unsigned cr = WG_R(color), cg = WG_G(color), cb = WG_B(color);
+    const float inv2 = 1.0f / (r * r);
+    for (int y = y0; y < y1; y++) {
+        float dy = (float)y + 0.5f - cy;
+        float dy2 = dy * dy;
+        uint32_t *row = &c->px[(size_t)y * c->w];
+        for (int x = x0; x < x1; x++) {
+            float dx = (float)x + 0.5f - cx;
+            float q = (dx * dx + dy2) * inv2;
+            if (q >= 1.0f) {
+                continue;
+            }
+            wg_blend_at(row + x, cr, cg, cb, lut[(int)(q * (float)WG_GLOW_LUT)]);
+        }
+    }
+}
+
+
+void wg_line(wg_canvas_t *c, float x0, float y0, float x1, float y1, float width, wg_color color)
+{
+    float dx = x1 - x0;
+    float dy = y1 - y0;
+    float len = sqrtf(dx * dx + dy * dy);
+    if (len < 1e-4f) {
+        return;
+    }
+    int steps = (int)(len * 2.0f) + 1;
+    float half = width * 0.5f;
+    for (int i = 0; i <= steps; i++) {
+        float t = (float)i / (float)steps;
+        wg_disc(c, x0 + dx * t, y0 + dy * t, half, color);
+    }
+}
+
+void wg_fill_under(wg_canvas_t *c, const float *height, int n, wg_color color)
+{
+    int cols = n < c->w ? n : c->w;
+    for (int x = 0; x < cols; x++) {
+        float h = height[x];
+        int y0 = (int)floorf(h);
+        /* Antialias the ridge itself; a jagged silhouette against a gradient is
+           the single most visible artifact on this panel. */
+        float frac = 1.0f - (h - (float)y0);
+        if (y0 >= 0 && y0 < c->h && frac > 0.0f) {
+            wg_blend(c, x, y0, WG_RGBA(WG_R(color), WG_G(color), WG_B(color), (unsigned)(WG_A(color) * frac)));
+        }
+        /* The body of the land is tens of thousands of pixels every frame, and
+           they are all the same colour: hoisting the clamp and the row
+           multiply out of the loop leaves only the blend itself. */
+        int ys = y0 + 1 < 0 ? 0 : y0 + 1;
+        const unsigned cr = WG_R(color), cg = WG_G(color), cb = WG_B(color), ca = WG_A(color);
+        uint32_t *p = &c->px[(size_t)ys * c->w + x];
+        for (int y = ys; y < c->h; y++, p += c->w) {
+            wg_blend_at(p, cr, cg, cb, ca);
+        }
+    }
+}
+
+/* Signed distance to a rounded rectangle, negative inside.
+
+   The corner uses a p-norm rather than the usual 2-norm. At p = 2 the corner is
+   a circular arc whose curvature jumps from zero to 1/r the instant it leaves
+   the straight edge; the eye reads that discontinuity as a kink. Raising p
+   spreads the curvature into the flat, which is the squircle every current
+   Apple surface is built from. The powf only runs on true corner pixels, a few
+   hundred per card, so it costs nothing measurable. */
+static float rrect_sd(float px, float py, float cx, float cy, float hw, float hh, float r)
+{
+    float qx = fabsf(px - cx) - (hw - r);
+    float qy = fabsf(py - cy) - (hh - r);
+    if (qx > 0.0f && qy > 0.0f) {
+        const float p = 4.2f;
+        return powf(powf(qx, p) + powf(qy, p), 1.0f / p) - r;
+    }
+    float m = qx > qy ? qx : qy;
+    return m - r;
+}
+
+/* Half-width of the shape at a given row, using the same corner exponent as
+   rrect_sd so the mask and the fill agree exactly. */
+static float rrect_half_at(float py, float cy, float hw, float hh, float r)
+{
+    float dy = fabsf(py - cy);
+    if (dy >= hh) {
+        return -1.0f;
+    }
+    float t = dy - (hh - r);
+    if (t <= 0.0f) {
+        return hw;
+    }
+    const float p = 4.2f;
+    float inner = powf(r, p) - powf(t, p);
+    if (inner <= 0.0f) {
+        return -1.0f;
+    }
+    return (hw - r) + powf(inner, 1.0f / p);
+}
+
+static void rrect_shade(wg_canvas_t *c, float x, float y, float w, float h, float r,
+                        wg_color top, wg_color bottom, bool gradient)
+{
+    if (w <= 0.0f || h <= 0.0f) {
+        return;
+    }
+    float hw = w * 0.5f, hh = h * 0.5f;
+    float cx = x + hw, cy = y + hh;
+    if (r > hw) {
+        r = hw;
+    }
+    if (r > hh) {
+        r = hh;
+    }
+    int x0 = wg_clampi((int)floorf(x) - 1, 0, c->w);
+    int x1 = wg_clampi((int)ceilf(x + w) + 1, 0, c->w);
+    int y0 = wg_clampi((int)floorf(y) - 1, 0, c->h);
+    int y1 = wg_clampi((int)ceilf(y + h) + 1, 0, c->h);
+
+    for (int py = y0; py < y1; py++) {
+        float v = h > 1.0f ? ((float)py + 0.5f - y) / h : 0.0f;
+        wg_color col = gradient ? wg_color_mix(top, bottom, wg_clampf(v, 0.0f, 1.0f)) : top;
+        unsigned base = WG_A(col);
+        for (int pxi = x0; pxi < x1; pxi++) {
+            float d = rrect_sd((float)pxi + 0.5f, (float)py + 0.5f, cx, cy, hw, hh, r);
+            float cov = wg_clampf(0.5f - d, 0.0f, 1.0f);
+            if (cov <= 0.0f) {
+                continue;
+            }
+            wg_blend(c, pxi, py, WG_RGBA(WG_R(col), WG_G(col), WG_B(col), (unsigned)(base * cov)));
+        }
+    }
+}
+
+void wg_round_rect(wg_canvas_t *c, float x, float y, float w, float h, float r, wg_color color)
+{
+    rrect_shade(c, x, y, w, h, r, color, color, false);
+}
+
+void wg_round_rect_grad(wg_canvas_t *c, float x, float y, float w, float h, float r,
+                        wg_color top, wg_color bottom)
+{
+    rrect_shade(c, x, y, w, h, r, top, bottom, true);
+}
+
+void wg_round_rect_stroke(wg_canvas_t *c, float x, float y, float w, float h, float r,
+                          wg_color top, wg_color bottom)
+{
+    if (w <= 0.0f || h <= 0.0f) {
+        return;
+    }
+    float hw = w * 0.5f, hh = h * 0.5f;
+    float cx = x + hw, cy = y + hh;
+    if (r > hw) {
+        r = hw;
+    }
+    if (r > hh) {
+        r = hh;
+    }
+    int x0 = wg_clampi((int)floorf(x) - 2, 0, c->w);
+    int x1 = wg_clampi((int)ceilf(x + w) + 2, 0, c->w);
+    int y0 = wg_clampi((int)floorf(y) - 2, 0, c->h);
+    int y1 = wg_clampi((int)ceilf(y + h) + 2, 0, c->h);
+
+    for (int py = y0; py < y1; py++) {
+        float v = h > 1.0f ? ((float)py + 0.5f - y) / h : 0.0f;
+        wg_color col = wg_color_mix(top, bottom, wg_clampf(v, 0.0f, 1.0f));
+        unsigned base = WG_A(col);
+        for (int pxi = x0; pxi < x1; pxi++) {
+            float d = rrect_sd((float)pxi + 0.5f, (float)py + 0.5f, cx, cy, hw, hh, r);
+            /* A one pixel band centred on the outline. */
+            float cov = wg_clampf(1.0f - fabsf(d + 0.5f), 0.0f, 1.0f);
+            if (cov <= 0.0f) {
+                continue;
+            }
+            wg_blend(c, pxi, py, WG_RGBA(WG_R(col), WG_G(col), WG_B(col), (unsigned)(base * cov)));
+        }
+    }
+}
+
+/* Working set for the blur. Static rather than heap because this runs every
+   frame a card is on screen, and an appliance that mallocs 60 times a second
+   for a year is an appliance that fragments.
+
+   The ring holds untouched source rows for the vertical pass; the accumulators
+   hold one running column sum per channel. */
+/* The sliding window makes the blur O(1) in radius, so a wide kernel costs the
+   same as a narrow one and only the ring grows. That matters here: the land is
+   a hard near-black silhouette, and a small radius left its ridge legible
+   through the glass as a dirty band rather than diffusing it. */
+#define WG_BLUR_MAX_R 14
+static uint32_t s_blur_ring[(2 * WG_BLUR_MAX_R + 1) * WG_W];
+static uint32_t s_blur_line[WG_W];
+static uint32_t s_acc_r[WG_W], s_acc_g[WG_W], s_acc_b[WG_W];
+
+/* Both passes slide a running sum rather than re-adding the window at every
+   pixel. Re-summing is O(radius) per pixel, which measured out around eighty
+   milliseconds a frame for a full-width card on this chip and would have made
+   the dismissal drag stutter. Sliding is O(1). */
+void wg_refract(wg_canvas_t *c, float x, float y, float w, float h, float r, float amount)
+{
+    if (w <= 0.0f || h <= 0.0f || amount <= 0.0f) {
+        return;
+    }
+    float hw = w * 0.5f, hh = h * 0.5f;
+    float cx = x + hw, cy = y + hh;
+    if (r > hw) {
+        r = hw;
+    }
+    if (r > hh) {
+        r = hh;
+    }
+    /* The band is where the surface is curving; inside it the glass is flat and
+       shows the backdrop straight through.
+
+       It has to be a fraction of the smaller half-dimension, not simply the
+       corner radius. On a capsule the radius is the half-height, so a band of r
+       reached the centre line and displaced the whole body outward instead of
+       just the rim: the backdrop was pulled apart through the middle and read
+       as a smear rather than an edge. */
+    float small = hw < hh ? hw : hh;
+    float band = small * 0.45f;
+    if (band > r) {
+        band = r;
+    }
+    if (band < 3.0f) {
+        band = 3.0f;
+    }
+
+    int y0 = wg_clampi((int)floorf(y), 0, c->h);
+    int y1 = wg_clampi((int)ceilf(y + h), 0, c->h);
+    int x0 = wg_clampi((int)floorf(x) - 2, 0, c->w);
+    int x1 = wg_clampi((int)ceilf(x + w) + 2, 0, c->w);
+    int span = x1 - x0;
+    if (span <= 0) {
+        return;
+    }
+
+    for (int py = y0; py < y1; py++) {
+        uint32_t *row = &c->px[(size_t)py * c->w];
+        memcpy(s_blur_line, &row[x0], (size_t)span * 4);
+        for (int px = x0; px < x1; px++) {
+            float d = rrect_sd((float)px + 0.5f, (float)py + 0.5f, cx, cy, hw, hh, r);
+            if (d > 0.0f || d < -band) {
+                continue;
+            }
+            /* Zero at the middle of the glass, strongest at the rim, and the
+               sign follows which side of the shape the pixel is on so the
+               backdrop is pulled outward rather than sheared one way. */
+            float k = 1.0f + d / band;
+            k = k * k;
+            float dir = ((float)px + 0.5f) < cx ? -1.0f : 1.0f;
+            int src = px - x0 + (int)(dir * k * amount);
+            src = wg_clampi(src, 0, span - 1);
+            row[px] = s_blur_line[src];
+        }
+    }
+}
+
+void wg_round_rect_specular(wg_canvas_t *c, float x, float y, float w, float h, float r,
+                            float lx, float ly, float intensity)
+{
+    if (w <= 0.0f || h <= 0.0f || intensity <= 0.0f) {
+        return;
+    }
+    float hw = w * 0.5f, hh = h * 0.5f;
+    float cx = x + hw, cy = y + hh;
+    if (r > hw) {
+        r = hw;
+    }
+    if (r > hh) {
+        r = hh;
+    }
+    float ll = sqrtf(lx * lx + ly * ly);
+    if (ll < 1e-5f) {
+        return;
+    }
+    lx /= ll;
+    ly /= ll;
+
+    int x0 = wg_clampi((int)floorf(x) - 3, 0, c->w);
+    int x1 = wg_clampi((int)ceilf(x + w) + 3, 0, c->w);
+    int y0 = wg_clampi((int)floorf(y) - 3, 0, c->h);
+    int y1 = wg_clampi((int)ceilf(y + h) + 3, 0, c->h);
+
+    for (int py = y0; py < y1; py++) {
+        for (int px = x0; px < x1; px++) {
+            float fx = (float)px + 0.5f, fy = (float)py + 0.5f;
+            float d = rrect_sd(fx, fy, cx, cy, hw, hh, r);
+            /* A band straddling the outline, biased inward: the lip belongs to
+               the surface, not to the air beside it. */
+            if (d > 0.9f || d < -2.6f) {
+                continue;
+            }
+            /* Outward normal from the field's own gradient. */
+            const float e = 0.6f;
+            float nx = rrect_sd(fx + e, fy, cx, cy, hw, hh, r) - rrect_sd(fx - e, fy, cx, cy, hw, hh, r);
+            float ny = rrect_sd(fx, fy + e, cx, cy, hw, hh, r) - rrect_sd(fx, fy - e, cx, cy, hw, hh, r);
+            float nl = sqrtf(nx * nx + ny * ny);
+            if (nl < 1e-5f) {
+                continue;
+            }
+            nx /= nl;
+            ny /= nl;
+
+            float facing = nx * lx + ny * ly;
+            /* The near lip, tight and bright, and the far lip the light leaves
+               through, broader and dimmer. */
+            float key = facing > 0.0f ? facing * facing * facing : 0.0f;
+            float back = facing < 0.0f ? (-facing) * (-facing) * 0.30f : 0.0f;
+            float lit = key + back;
+            if (lit <= 0.004f) {
+                continue;
+            }
+            /* Across the band, brightest right on the outline. */
+            float prof = 1.0f - wg_clampf(fabsf(d + 0.7f) / 1.9f, 0.0f, 1.0f);
+            prof = prof * prof;
+            unsigned a = (unsigned)(255.0f * intensity * lit * prof);
+            if (a < 2) {
+                continue;
+            }
+            wg_blend(c, px, py, WG_RGBA(255, 255, 255, a));
+        }
+    }
+}
+
+void wg_round_rect_shadow(wg_canvas_t *c, float x, float y, float w, float h, float r,
+                          float spread, float alpha)
+{
+    if (w <= 0.0f || h <= 0.0f || alpha <= 0.0f || spread <= 0.0f) {
+        return;
+    }
+    float hw = w * 0.5f, hh = h * 0.5f;
+    float cx = x + hw, cy = y + hh;
+    /* Offset downward: one light source, above. */
+    cy += spread * 0.35f;
+    if (r > hw) {
+        r = hw;
+    }
+    if (r > hh) {
+        r = hh;
+    }
+    int x0 = wg_clampi((int)floorf(x - spread), 0, c->w);
+    int x1 = wg_clampi((int)ceilf(x + w + spread), 0, c->w);
+    int y0 = wg_clampi((int)floorf(y - spread), 0, c->h);
+    int y1 = wg_clampi((int)ceilf(y + h + spread * 2.0f), 0, c->h);
+
+    for (int py = y0; py < y1; py++) {
+        for (int px = x0; px < x1; px++) {
+            float d = rrect_sd((float)px + 0.5f, (float)py + 0.5f, cx, cy, hw, hh, r);
+            if (d <= 0.0f || d > spread) {
+                continue;
+            }
+            float k = 1.0f - d / spread;
+            k = k * k * k;
+            unsigned a = (unsigned)(255.0f * alpha * k);
+            if (a < 2) {
+                continue;
+            }
+            wg_blend(c, px, py, WG_RGBA(0, 0, 0, a));
+        }
+    }
+}
+
+/* Separable blur whose writes are confined to a rounded rect.
+
+   Each pass copies the source span first, so the running sum always consumes
+   originals, and reads deliberately extend past the shape: what sits behind the
+   rim is exactly what a real edge would show. */
+static void blur_rrect_once(wg_canvas_t *c, float x, float y, float w, float h, float r,
+                            int pad, int radius)
+{
+    float hw = w * 0.5f, hh = h * 0.5f;
+    float cx = x + hw, cy = y + hh;
+    if (r > hw) {
+        r = hw;
+    }
+    if (r > hh) {
+        r = hh;
+    }
+
+    int rx0 = wg_clampi((int)floorf(x) - pad, 0, c->w);
+    int rx1 = wg_clampi((int)ceilf(x + w) + pad, 0, c->w);
+    int ry0 = wg_clampi((int)floorf(y) - pad, 0, c->h);
+    int ry1 = wg_clampi((int)ceilf(y + h) + pad, 0, c->h);
+    int rw = rx1 - rx0;
+    if (rw <= 0 || ry1 <= ry0) {
+        return;
+    }
+    const int span = 2 * radius + 1;
+    const unsigned n = (unsigned)span;
+
+    for (int py = ry0; py < ry1; py++) {
+        float half = rrect_half_at((float)py + 0.5f, cy, hw, hh, r);
+        if (half < 0.0f) {
+            continue;
+        }
+        int ia = wg_clampi((int)floorf(cx - half), rx0, rx1);
+        int ib = wg_clampi((int)ceilf(cx + half), rx0, rx1);
+        if (ib <= ia) {
+            continue;
+        }
+        uint32_t *row = &c->px[(size_t)py * c->w];
+        memcpy(s_blur_line, &row[rx0], (size_t)rw * 4);
+
+        unsigned sr = 0, sg = 0, sb = 0;
+        int start = ia - rx0;
+        for (int k = start - radius; k <= start + radius; k++) {
+            uint32_t p = s_blur_line[wg_clampi(k, 0, rw - 1)];
+            sr += (p >> 16) & 0xFF;
+            sg += (p >> 8) & 0xFF;
+            sb += p & 0xFF;
+        }
+        for (int px = ia; px < ib; px++) {
+            row[px] = 0xFF000000u | ((sr / n) << 16) | ((sg / n) << 8) | (sb / n);
+            int i = px - rx0;
+            uint32_t out = s_blur_line[wg_clampi(i - radius, 0, rw - 1)];
+            uint32_t in = s_blur_line[wg_clampi(i + radius + 1, 0, rw - 1)];
+            sr += ((in >> 16) & 0xFF) - ((out >> 16) & 0xFF);
+            sg += ((in >> 8) & 0xFF) - ((out >> 8) & 0xFF);
+            sb += (in & 0xFF) - (out & 0xFF);
+        }
+    }
+
+    /* Vertical. The ring holds rows straight from the canvas, and the running
+       column sums cover the whole region; only the write is masked. */
+    memset(s_acc_r, 0, (size_t)rw * sizeof(uint32_t));
+    memset(s_acc_g, 0, (size_t)rw * sizeof(uint32_t));
+    memset(s_acc_b, 0, (size_t)rw * sizeof(uint32_t));
+    int rh = ry1 - ry0;
+
+    for (int k = 0; k < span; k++) {
+        int sy = wg_clampi(k - radius, 0, rh - 1);
+        uint32_t *slot = &s_blur_ring[(size_t)k * WG_W];
+        memcpy(slot, &c->px[(size_t)(ry0 + sy) * c->w + rx0], (size_t)rw * 4);
+        for (int i = 0; i < rw; i++) {
+            uint32_t p = slot[i];
+            s_acc_r[i] += (p >> 16) & 0xFF;
+            s_acc_g[i] += (p >> 8) & 0xFF;
+            s_acc_b[i] += p & 0xFF;
+        }
+    }
+
+    for (int j = 0; j < rh; j++) {
+        int py = ry0 + j;
+        float half = rrect_half_at((float)py + 0.5f, cy, hw, hh, r);
+        if (half >= 0.0f) {
+            int ia = wg_clampi((int)floorf(cx - half), rx0, rx1);
+            int ib = wg_clampi((int)ceilf(cx + half), rx0, rx1);
+            uint32_t *row = &c->px[(size_t)py * c->w];
+            for (int px = ia; px < ib; px++) {
+                int i = px - rx0;
+                row[px] = 0xFF000000u | ((s_acc_r[i] / n) << 16) | ((s_acc_g[i] / n) << 8) |
+                          (s_acc_b[i] / n);
+            }
+        }
+        int slot_index = j % span;
+        uint32_t *slot = &s_blur_ring[(size_t)slot_index * WG_W];
+        int fetch = wg_clampi(j + radius + 1, 0, rh - 1);
+        for (int i = 0; i < rw; i++) {
+            uint32_t o = slot[i];
+            s_acc_r[i] -= (o >> 16) & 0xFF;
+            s_acc_g[i] -= (o >> 8) & 0xFF;
+            s_acc_b[i] -= o & 0xFF;
+        }
+        memcpy(slot, &c->px[(size_t)(ry0 + fetch) * c->w + rx0], (size_t)rw * 4);
+        for (int i = 0; i < rw; i++) {
+            uint32_t p = slot[i];
+            s_acc_r[i] += (p >> 16) & 0xFF;
+            s_acc_g[i] += (p >> 8) & 0xFF;
+            s_acc_b[i] += p & 0xFF;
+        }
+    }
+}
+
+void wg_blur_rrect(wg_canvas_t *c, float x, float y, float w, float h, float r, int pad,
+                   int radius, int passes)
+{
+    if (w <= 0.0f || h <= 0.0f || radius < 1) {
+        return;
+    }
+    if (radius > WG_BLUR_MAX_R) {
+        radius = WG_BLUR_MAX_R;
+    }
+    if (passes < 1) {
+        passes = 1;
+    }
+    for (int i = 0; i < passes; i++) {
+        blur_rrect_once(c, x, y, w, h, r, pad, i == 0 ? radius : (radius * 3) / 4 + 1);
+    }
+}
+
+void wg_dim(wg_canvas_t *c, float amount)
+{
+    float k = wg_clampf(1.0f - amount, 0.0f, 1.0f);
+    size_t n = (size_t)c->w * (size_t)c->h;
+    for (size_t i = 0; i < n; i++) {
+        uint32_t d = c->px[i];
+        unsigned r = (unsigned)(((d >> 16) & 0xFF) * k);
+        unsigned g = (unsigned)(((d >> 8) & 0xFF) * k);
+        unsigned b = (unsigned)((d & 0xFF) * k);
+        c->px[i] = 0xFF000000u | (r << 16) | (g << 8) | b;
+    }
+}
+
+/* Ordered dither. Without it the sky's slow vertical ramps quantize into bands
+   that are obvious on an AMOLED in a dark room. */
+static const uint8_t k_bayer[8][8] = {
+    { 0, 32, 8, 40, 2, 34, 10, 42 },
+    { 48, 16, 56, 24, 50, 18, 58, 26 },
+    { 12, 44, 4, 36, 14, 46, 6, 38 },
+    { 60, 28, 52, 20, 62, 30, 54, 22 },
+    { 3, 35, 11, 43, 1, 33, 9, 41 },
+    { 51, 19, 59, 27, 49, 17, 57, 25 },
+    { 15, 47, 7, 39, 13, 45, 5, 37 },
+    { 63, 31, 55, 23, 61, 29, 53, 21 },
+};
+
+void wg_to_rgb565_rows(const wg_canvas_t *c, uint16_t *out, int y0, int rows)
+{
+    const int w = c->w;
+    for (int y = y0; y < y0 + rows; y++) {
+        const uint32_t *row = &c->px[(size_t)y * w];
+        /* Indexed from the band's own start, but dithered by absolute y: the
+           Bayer threshold has to keep its phase across a band boundary or the
+           seams become visible lines in a gradient. */
+        uint16_t *orow = &out[(size_t)(y - y0) * w];
+        /* The dither offsets repeat every eight columns, so they are worked out
+           once per row rather than re-derived from the matrix per pixel. Red
+           and blue quantize to 5 bits, green to 6, so the amplitude differs
+           per channel. */
+        int drb[8], dg[8];
+        for (int i = 0; i < 8; i++) {
+            int thr = k_bayer[y & 7][i];
+            drb[i] = (thr >> 3) - 4;
+            dg[i] = (thr >> 4) - 2;
+        }
+        for (int x = 0; x < w; x++) {
+            uint32_t p = row[x];
+            int k = x & 7;
+            int r = (int)((p >> 16) & 0xFF) + drb[k];
+            int g = (int)((p >> 8) & 0xFF) + dg[k];
+            int b = (int)(p & 0xFF) + drb[k];
+            r = r < 0 ? 0 : (r > 255 ? 255 : r);
+            g = g < 0 ? 0 : (g > 255 ? 255 : g);
+            b = b < 0 ? 0 : (b > 255 ? 255 : b);
+            orow[x] = (uint16_t)(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
+        }
+    }
+}
+
+void wg_to_rgb565(const wg_canvas_t *c, uint16_t *out)
+{
+    wg_to_rgb565_rows(c, out, 0, c->h);
+}

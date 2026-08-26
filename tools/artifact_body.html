@@ -1,0 +1,1266 @@
+<title>Wedge OS — technical reference</title>
+
+<style>
+/* The device is an AMOLED that lives in a dark bedroom. This page commits to a
+   single dark treatment on purpose: judging a night interface against a white
+   page falsifies the only thing worth judging. Every color is painted
+   explicitly so the page holds on either host ground. */
+
+@font-face {
+  font-family: "WedgeSans";
+  src: url("__INTER__") format("woff");
+  font-weight: 100 900;
+  font-display: block;
+}
+@font-face {
+  font-family: "WedgeSerif";
+  src: url("__NEWSREADER__") format("woff");
+  font-weight: 200 800;
+  font-display: block;
+}
+
+:root {
+  color-scheme: dark;
+
+  /* Taken from the firmware's own night palette rather than picked to match it:
+     the ground is the sky's top stop, the accent is wg_scene_accent(). */
+  --ground: #0a0b10;
+  --ground-2: #0d0f16;
+  --surface: #14161e;
+  --raised: #1b1e29;
+  --line: #262a37;
+  --line-soft: #1c202b;
+
+  --ink: #e9e6e1;
+  --ink-2: #969cad;
+  --ink-3: #626879;
+
+  --accent: #e8935c;
+  --accent-dim: #a5673d;
+  --moon: #8e9ad4;
+  --good: #6fbf9b;
+  --warn: #d9a05b;
+  --bad: #d97a6b;
+
+  --sans: "WedgeSans", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --serif: "WedgeSerif", ui-serif, Georgia, serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+
+  --measure: 63ch;
+}
+
+* { box-sizing: border-box; }
+
+html { background: var(--ground); }
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(120% 60% at 50% 0%, #12141d 0%, var(--ground) 62%),
+    var(--ground);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 0 24px 120px;
+}
+
+.col {
+  max-width: var(--measure);
+}
+
+/* ---- masthead ---- */
+
+.masthead {
+  padding: 68px 0 34px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--accent);
+  margin: 0;
+}
+
+h1 {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: clamp(34px, 5.4vw, 58px);
+  line-height: 1.04;
+  letter-spacing: -0.02em;
+  margin: 0;
+  max-width: 18ch;
+  text-wrap: balance;
+}
+
+h1 em {
+  font-style: italic;
+  color: var(--ink-2);
+}
+
+.standfirst {
+  font-family: var(--serif);
+  font-size: 20px;
+  line-height: 1.5;
+  color: var(--ink-2);
+  margin: 0;
+  max-width: 52ch;
+}
+
+.standfirst strong { color: var(--ink); font-weight: 600; }
+
+/* ---- the device ---- */
+
+.stage {
+  margin: 20px 0 0;
+  padding: 44px 24px 30px;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #0c0e15 0%, #090a0f 100%);
+  border: 1px solid var(--line-soft);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+/* The wedge is 78.2 mm wide and 32.5 mm tall, reclined 54 degrees. This is a
+   suggestion of that object, not a render of it: enough shell to stop the panel
+   reading as a browser rectangle. */
+.device {
+  position: relative;
+  padding: 11px 13px 13px;
+  border-radius: 7px 7px 3px 3px;
+  background: linear-gradient(175deg, #2b2e36 0%, #202329 44%, #16181d 100%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.07) inset,
+    0 26px 44px -24px rgba(0, 0, 0, 0.95);
+  touch-action: none;
+}
+
+.panel {
+  display: block;
+  width: 536px;
+  height: 240px;
+  max-width: 100%;
+  border-radius: 2px;
+  background: #000;
+  cursor: pointer;
+  image-rendering: auto;
+}
+
+.plinth {
+  width: min(660px, 100%);
+  height: 1px;
+  margin-top: 26px;
+  background: linear-gradient(90deg, transparent, var(--line), transparent);
+}
+
+.stage-note {
+  margin: 14px 0 0;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  text-align: center;
+}
+
+@media (max-width: 620px) {
+  .panel { width: 100%; height: auto; aspect-ratio: 536 / 240; }
+}
+
+/* ---- instruments ---- */
+
+.rig {
+  margin-top: 22px;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 780px) {
+  .rig { grid-template-columns: 1.35fr 1fr; align-items: start; }
+}
+
+.bay {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.bay h3 {
+  margin: 0;
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  font-weight: 600;
+}
+
+.field { display: flex; flex-direction: column; gap: 7px; }
+
+.field-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+label.inline {
+  font-size: 12.5px;
+  color: var(--ink-2);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+  background: transparent;
+}
+
+input[type="text"], select {
+  background: var(--ground-2);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  padding: 9px 11px;
+  width: 100%;
+  min-width: 0;
+}
+
+input[type="text"] { font-family: var(--serif); font-size: 15.5px; }
+
+input[type="text"]:focus, select:focus, button:focus-visible, input[type="range"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button {
+  background: var(--raised);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  border-radius: 3px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 9px 14px;
+  cursor: pointer;
+  transition: transform 90ms ease-out, background 120ms ease-out;
+  white-space: nowrap;
+}
+
+button:hover { background: #232733; }
+button:active { transform: scale(0.975); }
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #1c1005;
+  font-weight: 600;
+}
+
+button.primary:hover { background: #f0a068; }
+
+.chips { display: flex; gap: 7px; flex-wrap: wrap; }
+
+.chip {
+  font-size: 12px;
+  padding: 6px 10px;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--ink-2);
+}
+
+.chip:hover { color: var(--ink); }
+
+/* Readouts. Digits are tabular so nothing jitters as values change. */
+.readout {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 5px 14px;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.readout dt { color: var(--ink-3); }
+.readout dd { margin: 0; color: var(--ink); }
+
+.pill {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 2px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  border: 1px solid var(--line);
+  color: var(--ink-2);
+}
+
+.pill.live { border-color: var(--accent-dim); color: var(--accent); }
+.pill.kept { border-color: #3a4358; color: var(--moon); }
+
+.meter {
+  height: 3px;
+  background: var(--line-soft);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.meter i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  width: 0;
+}
+
+/* ---- standing lines editor ---- */
+
+.bank {
+  margin-top: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.bank-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.bank ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  counter-reset: line;
+}
+
+.bank li {
+  display: grid;
+  grid-template-columns: 1.6rem 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.bank .n {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.bank input[type="text"] {
+  font-size: 14.5px;
+  padding: 8px 11px;
+}
+
+.bank input.over {
+  border-color: var(--bad);
+}
+
+/* Fit is shown in panel pixels, measured with the device's own face, because a
+   character count cannot express it. */
+.fit {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-3);
+  white-space: nowrap;
+  min-width: 6.5rem;
+  text-align: right;
+}
+
+.fit.over { color: var(--bad); }
+.fit.tight { color: var(--warn); }
+
+.bank li button {
+  background: none;
+  border: 1px solid var(--line);
+  color: var(--ink-3);
+  font-size: 12px;
+  padding: 7px 9px;
+}
+
+.bank li button:hover:not(:disabled) { color: var(--ink); }
+
+.bank-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-3);
+  line-height: 1.55;
+}
+
+/* ---- prose ---- */
+
+section { margin-top: 76px; }
+
+h2 {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: clamp(25px, 3.2vw, 33px);
+  line-height: 1.18;
+  letter-spacing: -0.015em;
+  margin: 0 0 10px;
+  max-width: 24ch;
+  text-wrap: balance;
+}
+
+h3.sub {
+  font-family: var(--sans);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  margin: 30px 0 6px;
+  color: var(--ink);
+}
+
+p { margin: 0 0 15px; }
+p:last-child { margin-bottom: 0; }
+
+.lede { color: var(--ink-2); }
+
+strong { font-weight: 600; color: var(--ink); }
+
+.decision {
+  border-top: 1px solid var(--line);
+  padding-top: 22px;
+  margin-top: 30px;
+}
+
+.decision .verdict {
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+
+.verdict.cut { color: var(--bad); }
+.verdict.add { color: var(--good); }
+.verdict.keep { color: var(--ink-3); }
+.verdict.change { color: var(--accent); }
+
+.pull {
+  font-family: var(--serif);
+  font-size: 21px;
+  line-height: 1.45;
+  color: var(--ink);
+  border-left: 2px solid var(--accent);
+  padding-left: 18px;
+  margin: 22px 0;
+  max-width: 46ch;
+}
+
+/* ---- tables ---- */
+
+.tablewrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface);
+  margin-top: 18px;
+}
+
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+
+th {
+  text-align: left;
+  font-size: 10.5px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  font-weight: 600;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+td {
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--line-soft);
+  vertical-align: top;
+  color: var(--ink-2);
+}
+
+td:first-child { color: var(--ink); }
+
+tbody tr:last-child td { border-bottom: 0; }
+
+td.num, th.num {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  font-size: 12.5px;
+}
+
+.mark { font-weight: 600; white-space: nowrap; }
+.mark.y { color: var(--good); }
+.mark.n { color: var(--bad); }
+.mark.p { color: var(--warn); }
+
+code {
+  font-family: var(--mono);
+  font-size: 0.86em;
+  background: var(--ground-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 2px;
+  padding: 0.1em 0.34em;
+  color: var(--ink);
+}
+
+footer {
+  margin-top: 84px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink-3);
+  line-height: 1.9;
+}
+
+.loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-3);
+  background: var(--ground);
+  z-index: 2;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button { transition: none; }
+}
+</style>
+
+<div class="wrap">
+
+<header class="masthead">
+  <p class="eyebrow">Wedge OS &middot; technical reference</p>
+  <h1>536 &times; 240 bedside appliance<em>build, protocol, pinout, constants</em></h1>
+  <p class="standfirst">The panel below runs the shipping firmware, compiled to WebAssembly
+  from the same C the ESP32-S3 executes. Use it as a bench: scrub the clock, inject a
+  message, drag the card, watch the state and spring values move.</p>
+</header>
+
+</header>
+
+<div class="stage">
+  <div class="loading" id="loading">compiling the day&hellip;</div>
+  <div class="device">
+    <canvas class="panel" id="panel" width="536" height="240" aria-label="Wedge display, 536 by 240"></canvas>
+  </div>
+  <div class="plinth"></div>
+  <p class="stage-note">1.91&Prime; AMOLED &middot; 536 &times; 240 &middot; shown through the panel&rsquo;s RGB565 and its dither</p>
+</div>
+
+<div class="rig">
+  <div class="bay">
+    <h3>The day</h3>
+    <div class="field">
+      <div class="field-row" style="justify-content: space-between">
+        <label class="inline" for="clock">Local time</label>
+        <span class="pill" id="clockLabel">9:42 PM</span>
+      </div>
+      <input type="range" id="clock" min="0" max="1439" step="1" value="1302" aria-label="Time of day" />
+    </div>
+    <div class="field-row">
+      <button id="play">Run the day</button>
+      <button class="chip" data-jump="390">6:30a</button>
+      <button class="chip" data-jump="750">12:30p</button>
+      <button class="chip" data-jump="1160">7:20p</button>
+      <button class="chip" data-jump="192">3:12a</button>
+    </div>
+
+    <h3 style="margin-top:6px">Send her something</h3>
+    <div class="field">
+      <input type="text" id="text" value="You've got this. I know today is the big one." maxlength="280" />
+      <div class="field-row">
+        <select id="type" aria-label="Message kind">
+          <option value="3" selected>Encouragement</option>
+          <option value="0">Just a note</option>
+          <option value="1">Good morning</option>
+          <option value="2">Goodnight</option>
+          <option value="6">Affection</option>
+          <option value="5">Compliment</option>
+          <option value="7">Special day</option>
+        </select>
+        <button class="primary" id="send">Send</button>
+      </div>
+    </div>
+    <div class="chips">
+      <button class="chip" data-preset="Good morning. The first thing I thought about was you.|1">morning note</button>
+      <button class="chip" data-preset="Sleep well. Everything you did today was enough.|2">goodnight</button>
+      <button class="chip" data-preset="I saw a dog on the way to work that walked exactly like you do when you are pretending not to be excited.|0">a long one</button>
+    </div>
+  </div>
+
+  <div class="bay">
+    <h3>Instruments</h3>
+    <dl class="readout">
+      <dt>state</dt><dd id="rState">HOME</dd>
+      <dt>mode</dt><dd id="rMode">NIGHT</dd>
+      <dt>emission</dt><dd id="rBright">36 / 255</dd>
+      <dt>waiting</dt><dd id="rPending">0</dd>
+      <dt>cached</dt><dd id="rCached">0</dd>
+      <dt>polls</dt><dd id="rPolls">0</dd>
+      <dt>moon</dt><dd id="rMoon">full</dd>
+      <dt>card</dt><dd id="rCard">0.00</dd>
+      <dt>velocity</dt><dd id="rVel">0.00</dd>
+    </dl>
+    <div class="meter" aria-hidden="true"><i id="brightBar"></i></div>
+
+    <h3 style="margin-top:6px">Hardware</h3>
+    <div class="field-row">
+      <button id="btn">Press the button</button>
+      <button class="chip" id="btnLong">Hold (diagnostics)</button>
+    </div>
+    <div class="field-row">
+      <label class="inline"><input type="checkbox" id="wifi" checked /> Wi-Fi</label>
+      <label class="inline"><input type="checkbox" id="rm" /> Reduce motion</label>
+    </div>
+    <div class="field-row">
+      <select id="prov" aria-label="Setup screen">
+        <option value="-1">Normal operation</option>
+        <option value="0">Setup: waiting for a phone</option>
+        <option value="1">Setup: phone joined</option>
+        <option value="2">Setup: testing credentials</option>
+        <option value="3">Setup: credentials failed</option>
+        <option value="4">Setup: forgetting the network</option>
+      </select>
+    </div>
+    <p style="margin:0;font-size:12px;color:var(--ink-3);line-height:1.5">
+      Drag the open card downward to dismiss it. Grab it mid-flight to see the
+      spring re-target without a jump.
+    </p>
+  </div>
+</div>
+
+<div class="bank">
+  <div class="bank-head">
+    <h3 style="margin:0;font-size:10.5px;letter-spacing:0.18em;text-transform:uppercase;color:var(--ink-3);font-weight:600">Standing lines</h3>
+    <span class="fit" id="bankCount">0 / 12</span>
+  </div>
+  <p class="bank-note">
+    Shown when nothing has been sent. One line per day, turning over at local midnight.
+    Width is measured in panel pixels with the device&rsquo;s own face: a character count
+    cannot express the limit, since ordinary prose runs about nine pixels per character and
+    capitals run nineteen. Edits apply to the panel above immediately.
+  </p>
+  <ol id="bankList"></ol>
+  <div class="field-row">
+    <input type="text" id="bankNew" placeholder="Add a line" />
+    <button id="bankAdd">Add</button>
+    <button class="chip" id="bankReset">Reset to defaults</button>
+  </div>
+  <p class="bank-note" id="bankNote"></p>
+</div>
+
+<section>
+  <div class="col">
+    <p class="eyebrow">Layout</p>
+    <h2>One core, three backends</h2>
+    <p class="lede">Nothing under <code>core/</code> includes a platform header. The device,
+    the SDL simulator and this page compile the same sources, so they cannot drift.</p>
+  </div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Path</th><th>Contents</th></tr></thead>
+      <tbody>
+        <tr><td><code>core/include/wedge/</code></td><td>Public headers: <code>canvas</code>, <code>font</code>, <code>spring</code>, <code>scene</code>, <code>message</code>, <code>app</code>.</td></tr>
+        <tr><td><code>core/src/</code></td><td>Renderer, text, springs, scene, message cache, ambient bank, state machine.</td></tr>
+        <tr><td><code>core/src/faces/</code></td><td>Screens: home, message card, boot, diagnostics. Shared glass and geometry helpers.</td></tr>
+        <tr><td><code>core/src/fonts/</code></td><td>Generated glyph atlases. Do not edit; run <code>make fonts</code>.</td></tr>
+        <tr><td><code>platform/sdl/</code></td><td>Host simulator, SDL2.</td></tr>
+        <tr><td><code>platform/wasm/</code></td><td>Emscripten port. Exports the C API this page drives.</td></tr>
+        <tr><td><code>platform/esp32s3/</code></td><td>ESP-IDF project: RM67162, CST816T, Wi-Fi, SNTP, HTTP, NVS.</td></tr>
+        <tr><td><code>server/</code></td><td>Next.js backend and sender UI.</td></tr>
+        <tr><td><code>tools/</code></td><td>Font baker, headless frame renderer, moon-path test, artifact builder.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="col">
+    <p class="eyebrow">Build</p>
+    <h2>Commands</h2>
+  </div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Command</th><th>Result</th></tr></thead>
+      <tbody>
+        <tr><td><code>make</code></td><td>Builds <code>build/wedge-sim</code>.</td></tr>
+        <tr><td><code>make run</code></td><td>Runs the simulator. Keys: <code>1</code>-<code>5</code> queue a message, <code>space</code> the GPIO 0 button, <code>L</code> long press, <code>[</code> <code>]</code> step an hour, <code>S</code> screenshot.</td></tr>
+        <tr><td><code>make fonts</code></td><td>Re-bakes glyph atlases from <code>tools/bake_fonts.py</code>.</td></tr>
+        <tr><td><code>make shots</code></td><td>Headless renders to <code>build/shots/</code>: per-hour stills, contact sheet, <code>motion.gif</code>, boot sequence.</td></tr>
+        <tr><td><code>make test-moon</code></td><td>Celestial path continuity regression.</td></tr>
+        <tr><td><code>node build/wasm/test.mjs</code></td><td>25 behaviour assertions against the WebAssembly build.</td></tr>
+        <tr><td><code>idf.py build flash monitor</code></td><td>Device, from <code>platform/esp32s3</code> after sourcing ESP-IDF 5.5.4.</td></tr>
+        <tr><td><code>npm run build</code> / <code>vercel deploy --prod</code></td><td>Backend, from <code>server/</code>.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="col">
+    <p class="lede" style="margin-top:18px">Adding a source file to <code>core/</code> means adding it to
+    <code>platform/esp32s3/main/CMakeLists.txt</code>. The list is explicit because CMake evaluates a
+    glob once and ESP-IDF rejects <code>CONFIGURE_DEPENDS</code> during its requirement scan, so a
+    globbed build silently fails to link a new file.</p>
+  </div>
+</section>
+
+<section>
+  <div class="col">
+    <p class="eyebrow">Hardware</p>
+    <h2>LilyGO T-Display-S3 AMOLED 1.91&Prime; touch</h2>
+    <p class="lede">There is no ambient light sensor on this board. The 1.47&Prime; Lite carries a
+    CM32181; the 1.91&Prime; does not, and neither does the Plus or the T4-S3. Brightness is
+    therefore a curve over the clock.</p>
+  </div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Function</th><th>Part</th><th>Pins</th></tr></thead>
+      <tbody>
+        <tr><td>Display</td><td>RM67162, QSPI, 75 MHz</td><td class="num">D0-D3 18/7/48/5 &middot; SCK 47 &middot; CS 6 &middot; RST 17 &middot; TE 9</td></tr>
+        <tr><td>Touch</td><td>CST816T, I&sup2;C 400 kHz</td><td class="num">SDA 3 &middot; SCL 2 &middot; IRQ 21</td></tr>
+        <tr><td>Button</td><td>one, active low</td><td class="num">GPIO 0</td></tr>
+        <tr><td>Panel power</td><td>PMIC enable</td><td class="num">GPIO 38</td></tr>
+        <tr><td>Battery sense</td><td>ADC</td><td class="num">GPIO 4</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Resource</th><th class="num">Value</th><th>Note</th></tr></thead>
+      <tbody>
+        <tr><td>Flash</td><td class="num">16 MB</td><td>QIO, 80 MHz.</td></tr>
+        <tr><td>PSRAM</td><td class="num">8 MB</td><td>Octal, 80 MHz. The composite buffer lives here.</td></tr>
+        <tr><td>Composite buffer</td><td class="num">514 kB</td><td>536 &times; 240 XRGB8888.</td></tr>
+        <tr><td>Panel band</td><td class="num">25 kB</td><td>536 &times; 24 RGB565 after ordered dither. Internal DRAM, DMA-capable. <code>esp_lcd</code>'s SPI backend never sets <code>SPI_TRANS_DMA_USE_PSRAM</code>, so a panel buffer in PSRAM makes the driver attempt a 257 kB bounce allocation in internal RAM, which fails on a part with 185 kB of it. The frame goes across in ten bands; <code>wg_to_rgb565_rows</code> dithers by absolute <em>y</em> so the seams do not show.</td></tr>
+        <tr><td>Glyph atlases</td><td class="num">~133 kB</td><td>8-bit alpha, in flash.</td></tr>
+        <tr><td>Blur working set</td><td class="num">~57 kB</td><td>Static: ring, line, three column accumulators.</td></tr>
+        <tr><td>App binary</td><td class="num">1.19 MB</td><td>62% of a 3 MB OTA slot free.</td></tr>
+        <tr><td>Partitions</td><td class="num">2 &times; OTA</td><td>nvs, otadata, phy, ota_0, ota_1, spiffs.</td></tr>
+        <tr><td>QSPI frame time</td><td class="num">~2.7 ms</td><td>One transfer, whole frame.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="col">
+    <p class="eyebrow">Protocol</p>
+    <h2>Wire</h2>
+    <p class="lede">Two credentials. The device bearer token authenticates the appliance and can be
+    revoked alone; the sender password never reaches the device. Scheduling is enforced on the
+    device against its NTP clock, so a message is delivered early and held locally.</p>
+  </div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>Body</th></tr></thead>
+      <tbody>
+        <tr><td class="num">GET</td><td><code>/api/device/messages</code></td><td>device token</td><td><code>{messages:[{id,text,type,priority,available_at,expires_at}], server_time}</code></td></tr>
+        <tr><td class="num">POST</td><td><code>/api/device/messages/{id}/read</code></td><td>device token</td><td>Idempotent. <code>{ok:true}</code>.</td></tr>
+        <tr><td class="num">GET</td><td><code>/api/device/ambient</code></td><td>device token</td><td><code>{lines:[string]}</code>, at most 12.</td></tr>
+        <tr><td class="num">GET</td><td><code>http://192.168.4.1/*</code></td><td>setup AP, open</td><td>Captive portal. Any path serves the page; any DNS name resolves to it.</td></tr>
+        <tr><td class="num">POST</td><td><code>http://192.168.4.1/save</code></td><td>setup AP, open</td><td><code>s</code>=ssid, <code>p</code>=password, form-encoded. Credentials are written only after they connect.</td></tr>
+        <tr><td class="num">POST</td><td><code>/api/auth</code></td><td>password</td><td>Sets a 30-day HMAC session cookie.</td></tr>
+        <tr><td class="num">GET POST</td><td><code>/api/messages</code></td><td>session</td><td>List and create. Text capped at 280.</td></tr>
+        <tr><td class="num">DELETE</td><td><code>/api/messages/{id}</code></td><td>session</td><td>&mdash;</td></tr>
+        <tr><td class="num">GET PUT</td><td><code>/api/ambient</code></td><td>session</td><td><code>{lines:[string]}</code>. Replaces the whole bank.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="col">
+    <p class="lede" style="margin-top:18px">Storage picks itself from the environment: Upstash Redis
+    if <code>KV_REST_API_*</code> is set, Vercel Blob otherwise, an in-process map when neither is.
+    Blob is public-access with 30-character random pathnames that are never returned to a client;
+    that is unguessable, not access-controlled.</p>
+  </div>
+</section>
+
+<section>
+  <div class="col">
+    <p class="eyebrow">Constants</p>
+    <h2>Motion</h2>
+    <p class="lede">Springs, not curves: a curve cannot be re-targeted mid-flight without a jump,
+    and everything here can be grabbed while it moves. Damping ratio and response, integrated with
+    implicit Euler so a long frame cannot destabilise it.</p>
+  </div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Element</th><th class="num">Damping</th><th class="num">Response</th><th>Note</th></tr></thead>
+      <tbody>
+        <tr><td>Message card</td><td class="num">0.82</td><td class="num">0.42 s</td><td>The only overshoot on the device.</td></tr>
+        <tr><td>Offer capsule</td><td class="num">1.00</td><td class="num">0.55 s</td><td>Critically damped.</td></tr>
+        <tr><td>Press</td><td class="num">1.00</td><td class="num">0.16 s</td><td>Fires on touch-down.</td></tr>
+        <tr><td>Scene recede</td><td class="num">1.00</td><td class="num">0.50 s</td><td>Target follows the card&rsquo;s live value.</td></tr>
+        <tr><td>Boot reveal</td><td class="num">1.00</td><td class="num">0.75 s</td><td>Dissolve from black once time is synced.</td></tr>
+        <tr><td>Reduced motion</td><td class="num">1.00</td><td class="num">0.26 s</td><td><code>config.reduce_motion</code>. Shorter and flat, never absent.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Behaviour</th><th class="num">Constant</th><th>Note</th></tr></thead>
+      <tbody>
+        <tr><td>Flick projection</td><td class="num">d = 0.994</td><td>Dismissal decided from the projected endpoint.</td></tr>
+        <tr><td>Rubber-banding</td><td class="num">c = 0.55</td><td>Past fully open.</td></tr>
+        <tr><td>Home crossfade</td><td class="num">clear by 0.42</td><td>Of the card&rsquo;s travel.</td></tr>
+        <tr><td>Card content</td><td class="num">0.75 &rarr; 0.98</td><td>Laid out against the settled rect; never reflows.</td></tr>
+        <tr><td>Morph origin</td><td class="num"><code>app.card_from</code></td><td>Capsule rect snapshotted at the gesture, not recomputed per frame.</td></tr>
+        <tr><td>Refraction band</td><td class="num">0.45 &times; min half</td><td>Capped at the corner radius. A capsule's radius is its half-height.</td></tr>
+        <tr><td>Squircle exponent</td><td class="num">p = 4.2</td><td>Corner p-norm, shared by fill, stroke and blur mask.</td></tr>
+        <tr><td>Blur</td><td class="num">r 13 / 5, 3 passes</td><td>Card / capsule. Sliding window, O(1) in radius.</td></tr>
+        <tr><td>Dither</td><td class="num">8 &times; 8 Bayer</td><td>Applied at RGB565 conversion.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="col">
+    <p class="eyebrow">Behaviour</p>
+    <h2>Timings, limits, config</h2>
+  </div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Item</th><th class="num">Value</th><th>Note</th></tr></thead>
+      <tbody>
+        <tr><td>Poll interval</td><td class="num">300 s</td><td>&times;4 during sleep hours.</td></tr>
+        <tr><td>Card auto-close</td><td class="num">60 s</td><td>Unattended only; a drag resets it.</td></tr>
+        <tr><td>Keep window</td><td class="num">12 h</td><td>From read. Unread messages do not expire.</td></tr>
+        <tr><td>Message cache</td><td class="num">8</td><td>Fixed capacity, no allocation.</td></tr>
+        <tr><td>Message text</td><td class="num">280 B</td><td>Server rejects longer.</td></tr>
+        <tr><td>Ambient bank</td><td class="num">12 &times; 95 B</td><td>Persisted in NVS, versioned and magic-tagged.</td></tr>
+        <tr><td>Ambient width</td><td class="num">460 px</td><td>Hard limit. Renderer drops a face, then truncates.</td></tr>
+        <tr><td>Ambient rotation</td><td class="num">1 / day</td><td><code>local_days mod count</code>, turning over at local midnight.</td></tr>
+        <tr><td>Frame pacing</td><td class="num">16 / 66 ms</td><td>Busy / idle.</td></tr>
+        <tr><td>Touch sampling</td><td class="num">100 Hz</td><td>Faster than the frame, for release velocity.</td></tr>
+        <tr><td>Long press</td><td class="num">900 ms</td><td>Opens diagnostics.</td></tr>
+        <tr><td>Brightness</td><td class="num">6 &rarr; 210</td><td>Smoothstep over hand-set control points.</td></tr>
+        <tr><td>Day modes</td><td class="num">0/7/10/17/21</td><td>Sleep, morning, day, evening, night.</td></tr>
+        <tr><td>Wi-Fi backoff</td><td class="num">1 &rarr; 64 s</td><td>Doubling, capped.</td></tr>
+        <tr><td>Setup connect test</td><td class="num">18 s</td><td>Credentials are stored only on success, then the device restarts.</td></tr>
+        <tr><td>Forget network</td><td class="num">10 s hold</td><td>Panel warns from 4 s. GPIO 0 is the boot strap, so hold-at-power-on is unavailable.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Ambient bank API</th><th>Note</th></tr></thead>
+      <tbody>
+        <tr><td><code>wg_ambient_count(a)</code> / <code>wg_ambient_at(a, i)</code></td><td>Read.</td></tr>
+        <tr><td><code>wg_ambient_set(a, i, text)</code></td><td>Replace one line. Rejects blank.</td></tr>
+        <tr><td><code>wg_ambient_add(a, text)</code></td><td>Append, up to 12.</td></tr>
+        <tr><td><code>wg_ambient_remove(a, i)</code></td><td>Refuses to remove the last line.</td></tr>
+        <tr><td><code>wg_ambient_replace(a, lines, n)</code></td><td>Whole bank atomically; what the network path uses.</td></tr>
+        <tr><td><code>wg_ambient_reset(a)</code></td><td>Back to the built-in set.</td></tr>
+        <tr><td><code>wg_ambient_width(text)</code></td><td>Panel pixels at the drawn size, against <code>WG_AMBIENT_WIDTH_PX</code>.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="col">
+    <p class="lede" style="margin-top:18px">Every mutation writes through <code>host.persist</code>
+    immediately. Selection is <code>local_days mod count</code>: one line per day, turning over at
+    local midnight, so the same thought stands all day and a different one arrives tomorrow.</p>
+  </div>
+</section>
+
+<section class="col">
+  <p class="eyebrow">Unverified</p>
+  <h2>Known gaps</h2>
+  <p><strong>Never run on hardware.</strong> Everything above compiles, tests and renders. None of
+  it has been seen on the panel.</p>
+  <p><strong>Blur cost on device is unmeasured.</strong> 1.08 ms per frame on an M-series Mac; on the
+  S3 it is PSRAM-bandwidth bound, not arithmetic bound. <code>config.glass_blur = false</code>
+  disables refraction and blur in one line and the material still reads.</p>
+  <p><strong>No thermal work</strong> on a sealed shell around an always-on S3.</p>
+  <p><strong>OTA is unimplemented.</strong> Partitions are laid out for it; there is no update client.</p>
+  <p><strong>Fonts are San Francisco and New York</strong>, licensed by Apple for interfaces on
+  Apple platforms. Correct for a personal object, wrong for anything distributed. Inter and
+  Newsreader remain in <code>tools/ttf/</code>; the swap is one table in the baker.</p>
+  <p><strong>The enclosure is a desk wedge</strong>, reclined 54&deg; for a seated eye above a desk.
+  From a pillow it points at the ceiling.</p>
+</section>
+
+<footer>
+  CORE &nbsp;~2,600 lines C &middot; identical sources on device, simulator and this page<br />
+  DEVICE &nbsp;ESP32-S3R8 &middot; ESP-IDF 5.5.4 &middot; 1.15 MB &middot; zero warnings<br />
+  TESTS &nbsp;25 behaviour assertions &middot; moon-path continuity regression<br />
+  BACKEND &nbsp;Next.js 15 on Vercel &middot; Blob or Upstash Redis
+</footer>
+
+</div>
+
+<script>
+/*__WEDGE_WASM__*/
+</script>
+
+<script>
+(function () {
+  "use strict";
+
+  var EV = { TOUCH_DOWN: 1, TOUCH_MOVE: 2, TOUCH_UP: 3, BUTTON_DOWN: 4, BUTTON_UP: 5, BUTTON_LONG: 6,
+             WIFI_UP: 7, WIFI_DOWN: 8, TIME_SYNCED: 9 };
+  var STATES = ["BOOT", "INITIALIZING", "CONNECTING", "SYNCING_TIME", "HOME", "MESSAGE_AVAILABLE",
+                "MESSAGE_PRESENTATION", "DIAGNOSTIC"];
+  var MODES = ["SLEEP", "MORNING", "DAY", "EVENING", "NIGHT"];
+
+  /* 2026-08-08 00:00 UTC, a Saturday, plus the seven hours that undo the
+     firmware's default timezone so the slider lands on real local time. */
+  var DAY_BASE = 1786147200 + 7 * 3600;
+
+  var canvas = document.getElementById("panel");
+  var ctx = canvas.getContext("2d", { alpha: false });
+  var image = ctx.createImageData(536, 240);
+
+  var el = {
+    loading: document.getElementById("loading"),
+    clock: document.getElementById("clock"),
+    clockLabel: document.getElementById("clockLabel"),
+    play: document.getElementById("play"),
+    text: document.getElementById("text"),
+    type: document.getElementById("type"),
+    send: document.getElementById("send"),
+    btn: document.getElementById("btn"),
+    btnLong: document.getElementById("btnLong"),
+    wifi: document.getElementById("wifi"),
+    rm: document.getElementById("rm"),
+    state: document.getElementById("rState"),
+    mode: document.getElementById("rMode"),
+    bright: document.getElementById("rBright"),
+    pending: document.getElementById("rPending"),
+    cached: document.getElementById("rCached"),
+    polls: document.getElementById("rPolls"),
+    moon: document.getElementById("rMoon"),
+    card: document.getElementById("rCard"),
+    vel: document.getElementById("rVel"),
+    brightBar: document.getElementById("brightBar")
+  };
+
+  var api = null;
+  var playing = false;
+  var counter = 0;
+  var last = 0;
+  var booted = 0;
+
+  /* Named the way a person would say it, not as a number. */
+  function moonName(p) {
+    if (p < 0.03 || p > 0.97) { return "new"; }
+    if (p < 0.22) { return "wax crescent"; }
+    if (p < 0.28) { return "first quarter"; }
+    if (p < 0.47) { return "wax gibbous"; }
+    if (p < 0.53) { return "full"; }
+    if (p < 0.72) { return "wan gibbous"; }
+    if (p < 0.78) { return "last quarter"; }
+    return "wan crescent";
+  }
+
+  function minutesLabel(mins) {
+    var h = Math.floor(mins / 60), m = mins % 60;
+    var ap = h < 12 ? "AM" : "PM";
+    var h12 = h % 12; if (h12 === 0) { h12 = 12; }
+    return h12 + ":" + (m < 10 ? "0" : "") + m + " " + ap;
+  }
+
+  function setClockFromSlider() {
+    var mins = parseInt(el.clock.value, 10);
+    el.clockLabel.textContent = minutesLabel(mins);
+    if (api) { api.setClock(DAY_BASE + mins * 60); }
+  }
+
+  function send(text, type) {
+    if (!api || !text.trim()) { return; }
+    counter += 1;
+    api.send("web-" + counter, text, type, 1, 0);
+  }
+
+  function boot(Module) {
+    api = {
+      init: Module.cwrap("wedge_init", null, ["number", "number"]),
+      fb: Module.cwrap("wedge_framebuffer", "number", []),
+      tick: Module.cwrap("wedge_tick", null, ["number", "number"]),
+      event: Module.cwrap("wedge_event", null, ["number", "number", "number"]),
+      send: Module.cwrap("wedge_send", null, ["string", "string", "number", "number", "number"]),
+      setClock: Module.cwrap("wedge_set_clock", null, ["number"]),
+      setWifi: Module.cwrap("wedge_set_wifi", null, ["number"]),
+      state: Module.cwrap("wedge_state", "number", []),
+      mode: Module.cwrap("wedge_mode", "number", []),
+      brightness: Module.cwrap("wedge_brightness", "number", []),
+      pending: Module.cwrap("wedge_pending", "number", []),
+      cached: Module.cwrap("wedge_cached", "number", []),
+      polls: Module.cwrap("wedge_polls", "number", []),
+      kept: Module.cwrap("wedge_has_kept", "number", []),
+      cardv: Module.cwrap("wedge_card", "number", []),
+      velocity: Module.cwrap("wedge_card_velocity", "number", []),
+      moonPhase: Module.cwrap("wedge_moon_phase", "number", []),
+      ambCount: Module.cwrap("wedge_ambient_count", "number", []),
+      ambAt: Module.cwrap("wedge_ambient_at", "string", ["number"]),
+      ambSet: Module.cwrap("wedge_ambient_set", "number", ["number", "string"]),
+      ambAdd: Module.cwrap("wedge_ambient_add", "number", ["string"]),
+      ambRemove: Module.cwrap("wedge_ambient_remove", "number", ["number"]),
+      ambReset: Module.cwrap("wedge_ambient_reset", null, []),
+      ambWidth: Module.cwrap("wedge_ambient_width", "number", ["string"]),
+      ambLimitPx: Module.cwrap("wedge_ambient_limit_px", "number", []),
+      ambMax: Module.cwrap("wedge_ambient_max", "number", []),
+      ambTextMax: Module.cwrap("wedge_ambient_text_max", "number", []),
+      provision: Module.cwrap("wedge_provision", null, ["number", "string", "string"])
+    };
+
+    start(false);
+    renderBank();
+    el.loading.style.display = "none";
+    requestAnimationFrame(frame);
+  }
+
+  function start(reduceMotion) {
+    api.init(DAY_BASE + parseInt(el.clock.value, 10) * 60, reduceMotion ? 1 : 0);
+    booted = 0;
+    counter = 0;
+    if (!el.wifi.checked) { /* stays down until toggled */ }
+  }
+
+  function frame(now) {
+    if (!last) { last = now; }
+    var dt = Math.min((now - last) / 1000, 0.05);
+    last = now;
+
+    /* The boot sequence is part of the OS, so it is allowed to play rather than
+       being skipped: network up at 600 ms, clock synced at 1.2 s. */
+    booted += dt;
+    if (booted > 0.6 && booted - dt <= 0.6 && el.wifi.checked) { api.event(EV.WIFI_UP, 0, 0); }
+    if (booted > 1.2 && booted - dt <= 1.2) { api.event(EV.TIME_SYNCED, 0, 0); }
+
+    var step = 0;
+    if (playing) {
+      /* Two and a half minutes of the day per real second: fast enough to watch
+         a sunset arrive, slow enough that it still reads as a sunset. */
+      step = dt * 150;
+      var mins = (parseInt(el.clock.value, 10) + step / 60) % 1440;
+      el.clock.value = String(Math.floor(mins));
+      el.clockLabel.textContent = minutesLabel(Math.floor(mins));
+    }
+
+    api.tick(dt, step);
+
+    var ptr = api.fb();
+    image.data.set(Module_HEAP().subarray(ptr, ptr + 536 * 240 * 4));
+    ctx.putImageData(image, 0, 0);
+
+    var b = api.brightness();
+    el.state.textContent = STATES[api.state()] || "?";
+    el.mode.textContent = MODES[api.mode()] || "?";
+    el.bright.textContent = b + " / 255";
+    el.brightBar.style.width = (b / 255 * 100).toFixed(1) + "%";
+    var pend = api.pending();
+    el.pending.innerHTML = pend > 0
+      ? '<span class="pill live">' + pend + " new</span>"
+      : (api.kept() ? '<span class="pill kept">kept</span>' : "0");
+    el.cached.textContent = api.cached();
+    el.polls.textContent = api.polls();
+    el.moon.textContent = moonName(api.moonPhase());
+    el.card.textContent = api.cardv().toFixed(2);
+    el.vel.textContent = api.velocity().toFixed(2);
+
+    requestAnimationFrame(frame);
+  }
+
+  /* Re-read the heap view every frame. ALLOW_MEMORY_GROWTH can replace the
+     underlying ArrayBuffer, which detaches any view captured earlier and turns
+     the next blit into an empty panel. */
+  var moduleRef = null;
+  function Module_HEAP() { return moduleRef.HEAPU8; }
+
+  /* Standing lines. The bank lives in the WebAssembly module, so the list is
+     rendered from it rather than from a copy the page keeps: there is one
+     source of truth and the panel above reflects an edit on the next frame. */
+  function fitLabel(text) {
+    const w = api.ambWidth(text);
+    const limit = api.ambLimitPx();
+    const span = document.createElement("span");
+    span.className = "fit" + (w > limit ? " over" : w > limit * 0.9 ? " tight" : "");
+    span.textContent = w + " / " + limit + " px";
+    return span;
+  }
+
+  function renderBank() {
+    const list = document.getElementById("bankList");
+    const count = api.ambCount();
+    list.innerHTML = "";
+    for (let i = 0; i < count; i++) {
+      const li = document.createElement("li");
+
+      const n = document.createElement("span");
+      n.className = "n";
+      n.textContent = String(i + 1);
+
+      const input = document.createElement("input");
+      input.type = "text";
+      input.value = api.ambAt(i);
+      input.maxLength = api.ambTextMax();
+
+      const fit = fitLabel(input.value);
+
+      input.addEventListener("input", () => {
+        const next = fitLabel(input.value);
+        fit.className = next.className;
+        fit.textContent = next.textContent;
+        input.classList.toggle("over", api.ambWidth(input.value) > api.ambLimitPx());
+        /* Written through on every keystroke. It is rejected only when blank,
+           and a line too wide is still accepted because the renderer shortens
+           it; the readout is there so that is a choice rather than a surprise. */
+        if (input.value.trim()) {
+          api.ambSet(i, input.value);
+        }
+      });
+
+      const del = document.createElement("button");
+      del.textContent = "Remove";
+      del.disabled = count <= 1;
+      del.addEventListener("click", () => {
+        api.ambRemove(i);
+        renderBank();
+      });
+
+      li.append(n, input, fit, del);
+      list.appendChild(li);
+    }
+    document.getElementById("bankCount").textContent = count + " / " + api.ambMax();
+    const add = document.getElementById("bankAdd");
+    add.disabled = count >= api.ambMax();
+    document.getElementById("bankNote").textContent =
+      count >= api.ambMax() ? "The bank is full. Remove a line to add another." : "";
+  }
+
+  document.getElementById("bankAdd").addEventListener("click", () => {
+    const field = document.getElementById("bankNew");
+    if (!api || !field.value.trim()) { return; }
+    if (api.ambAdd(field.value)) {
+      field.value = "";
+      renderBank();
+    }
+  });
+  document.getElementById("bankNew").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { document.getElementById("bankAdd").click(); }
+  });
+  document.getElementById("bankReset").addEventListener("click", () => {
+    if (!api) { return; }
+    api.ambReset();
+    renderBank();
+  });
+
+  /* Pointer plumbing. Coordinates map into the panel's own 536 x 240 space so
+     the firmware receives exactly what the CST816T would report. */
+  function panelPoint(e) {
+    var r = canvas.getBoundingClientRect();
+    return {
+      x: Math.round((e.clientX - r.left) / r.width * 536),
+      y: Math.round((e.clientY - r.top) / r.height * 240)
+    };
+  }
+
+  var down = false;
+  canvas.addEventListener("pointerdown", function (e) {
+    if (!api) { return; }
+    down = true;
+    canvas.setPointerCapture(e.pointerId);
+    var p = panelPoint(e);
+    api.event(EV.TOUCH_DOWN, p.x, p.y);
+  });
+  canvas.addEventListener("pointermove", function (e) {
+    if (!api || !down) { return; }
+    var p = panelPoint(e);
+    api.event(EV.TOUCH_MOVE, p.x, p.y);
+  });
+  function release(e) {
+    if (!api || !down) { return; }
+    down = false;
+    var p = panelPoint(e);
+    api.event(EV.TOUCH_UP, p.x, p.y);
+  }
+  canvas.addEventListener("pointerup", release);
+  canvas.addEventListener("pointercancel", release);
+
+  el.clock.addEventListener("input", function () { playing = false; el.play.textContent = "Run the day"; setClockFromSlider(); });
+  el.play.addEventListener("click", function () {
+    playing = !playing;
+    el.play.textContent = playing ? "Pause" : "Run the day";
+  });
+  Array.prototype.forEach.call(document.querySelectorAll("[data-jump]"), function (b) {
+    b.addEventListener("click", function () {
+      playing = false; el.play.textContent = "Run the day";
+      el.clock.value = b.getAttribute("data-jump");
+      setClockFromSlider();
+    });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll("[data-preset]"), function (b) {
+    b.addEventListener("click", function () {
+      var parts = b.getAttribute("data-preset").split("|");
+      el.text.value = parts[0];
+      el.type.value = parts[1];
+      send(parts[0], parseInt(parts[1], 10));
+    });
+  });
+  el.send.addEventListener("click", function () { send(el.text.value, parseInt(el.type.value, 10)); });
+  el.text.addEventListener("keydown", function (e) {
+    if (e.key === "Enter") { send(el.text.value, parseInt(el.type.value, 10)); }
+  });
+  el.btn.addEventListener("pointerdown", function () { if (api) { api.event(EV.BUTTON_DOWN, 0, 0); } });
+  el.btn.addEventListener("pointerup", function () { if (api) { api.event(EV.BUTTON_UP, 0, 0); } });
+  el.btnLong.addEventListener("click", function () { if (api) { api.event(EV.BUTTON_LONG, 0, 0); } });
+  el.wifi.addEventListener("change", function () { if (api) { api.setWifi(el.wifi.checked ? 1 : 0); } });
+  document.getElementById("prov").addEventListener("change", function (e) {
+    if (!api) { return; }
+    var stage = parseInt(e.target.value, 10);
+    if (stage === 2 || stage === 3) {
+      api.provision(stage, "Wedge Setup 4F2A", "Casa Regalado");
+    } else if (stage === 4) {
+      api.provision(stage, "", "Hold to set up a different Wi-Fi");
+    } else {
+      api.provision(stage, "Wedge Setup 4F2A", "");
+    }
+  });
+  el.rm.addEventListener("change", function () {
+    if (!api) { return; }
+    start(el.rm.checked);
+    api.setWifi(el.wifi.checked ? 1 : 0);
+  });
+
+  setClockFromSlider();
+
+  WedgeModule().then(function (Module) {
+    moduleRef = Module;
+    boot(Module);
+  });
+})();
+</script>

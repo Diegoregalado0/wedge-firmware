@@ -1,0 +1,32 @@
+menu "Wedge"
+
+config WEDGE_WIFI_SSID
+    string "Wi-Fi SSID"
+    default "changeme"
+    help
+        Used only when no credentials are stored in NVS. Stored credentials
+        always win, so a provisioned device ignores this.
+
+config WEDGE_WIFI_PASSWORD
+    string "Wi-Fi password"
+    default ""
+
+config WEDGE_BACKEND_URL
+    string "Backend base URL"
+    default "https://wedge.vercel.app"
+    help
+        HTTPS only. The device verifies against the bundled root store.
+
+config WEDGE_DEVICE_ID
+    string "Device id"
+    default "wedge-01"
+
+config WEDGE_DEVICE_TOKEN
+    string "Device token"
+    default ""
+    help
+        Bearer token issued by the backend for this device. Section 39 asks
+        that this not be a personal credential; it authenticates the device
+        only and can be revoked on its own.
+
+endmenu

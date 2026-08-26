@@ -1,0 +1,46 @@
+CONFIG_IDF_TARGET="esp32s3"
+
+# 8 MB of octal PSRAM at 80 MHz. Both frame buffers live here.
+CONFIG_ESP32S3_SPIRAM_SUPPORT=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_SPIRAM_USE_MALLOC=y
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+CONFIG_FREERTOS_HZ=1000
+
+# The device must survive a hung network without a manual power cycle.
+CONFIG_ESP_TASK_WDT_INIT=y
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=10
+
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
+CONFIG_ESP_TLS_INSECURE=n
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+
+# The deployed backend. The device token is deliberately not here: it belongs in
+# the local sdkconfig, which is not committed, so a checkout of this repo cannot
+# authenticate as the appliance.
+CONFIG_WEDGE_BACKEND_URL="https://wedge-three.vercel.app"
+CONFIG_WEDGE_DEVICE_ID="wedge-01"
+
+# Routing between the access point and the station, so a phone joined to the
+# Wedge can reach the internet through it. This is what lets someone sign in to
+# a captive portal on the Wedge's behalf: the portal sees the Wedge's own MAC
+# and address, so accepting the terms authorises the Wedge rather than the
+# phone that did the tapping.
+CONFIG_LWIP_IP_FORWARD=y
+CONFIG_LWIP_IPV4_NAPT=y
+
+# The compositor streams half a megabyte through PSRAM several times a frame
+# and is limited by miss latency rather than by bandwidth. Sixty-four byte
+# lines fetch twice as much per miss, and a 64 kB data cache keeps more of the
+# working set resident between passes.
+CONFIG_ESP32S3_DATA_CACHE_64KB=y
+CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y

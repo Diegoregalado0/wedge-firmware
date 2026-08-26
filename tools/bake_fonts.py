@@ -1,0 +1,159 @@
+#!/usr/bin/env python3
+"""Rasterize TrueType faces into 8-bit alpha atlases compiled straight into the firmware.
+
+Each face is emitted as one C translation unit holding a glyph table and a single
+alpha blob. The renderer blends the blob against the framebuffer, so no font
+engine ships on the device.
+
+Tracking is baked per face rather than chosen at draw time: letter-spacing is a
+function of optical size, so a face rasterized at 84px and a face rasterized at
+15px want different values and never share one.
+"""
+
+import os
+import sys
+from PIL import Image, ImageFont
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+TTF = os.path.join(HERE, "ttf")
+# San Francisco and New York, from the system. Apple licenses these for use in
+# apps and interfaces on Apple platforms, which a personal ESP32 appliance is
+# not; swapping FACES back to Inter and Newsreader is the only change needed to
+# make this redistributable, and both are still in tools/ttf for that reason.
+SYS = "/System/Library/Fonts"
+OUT = os.path.abspath(os.path.join(HERE, "..", "core", "src", "fonts"))
+
+ASCII = "".join(chr(c) for c in range(32, 127))
+# The dash is what the clock shows before the time is known.
+DIGITS = "0123456789: APM-"
+# The date is set in sentence case now, so it needs a full alphabet.
+DATESET = "".join(sorted(set(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,:'-")))
+KICKERSET = "".join(sorted(set("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .,'")))
+
+# name, file, px, axes (in the face's own axis order), charset, tracking px
+# Optical size is set per face, not inherited: Inter's opsz axis is what keeps
+# the 78px numerals from looking like blown-up body text.
+SF = os.path.join(SYS, "SFNS.ttf")        # axes: Width, Optical size, GRAD, Weight
+NY = os.path.join(SYS, "NewYork.ttf")     # axes: Optical size, Weight, GRAD
+
+# The optical size axis is set per face rather than inherited. It is the whole
+# reason a display face does not look like blown-up body text: SF redraws its
+# counters and joins as it grows, and asking for 96 at 84px is what makes the
+# numerals read as a clock rather than as large UI.
+FACES = [
+    # The clock anchors the panel, so it is set heavy, tight and optically
+    # large. Display type wants negative tracking; at 84px this is about 4%.
+    ("clock",   SF, 100, [100.0, 110.0, 400.0, 640.0], DIGITS,   -4.00),
+    ("clock_s", SF, 56, [100.0, 74.0, 400.0, 600.0], DIGITS,   -2.10),
+    # Sentence case at normal tracking, semibold. Letter-spaced uppercase is a
+    # magazine mannerism, not how a lock screen sets a date.
+    ("date",    SF, 24, [100.0, 24.0, 400.0, 600.0], DATESET,   0.10),
+    ("kicker",  SF, 12, [100.0, 17.0, 400.0, 680.0], KICKERSET, 1.30),
+    ("label",   SF, 15, [100.0, 17.0, 400.0, 520.0], ASCII,     0.10),
+    # The standing line and the offer capsule get their own faces rather than
+    # reusing label: label is also the message card's body copy, and card
+    # wrapping was tuned to its metrics. A quote read from across a room wants
+    # weight, not just size, or it competes with the clock without winning.
+    ("quote",   SF, 22, [100.0, 24.0, 400.0, 650.0], DATESET,   0.05),
+    ("offer",   SF, 18, [100.0, 20.0, 400.0, 600.0], ASCII,     0.10),
+    # The message body is San Francisco too. A serif was the more romantic
+    # choice and it is what Apple reaches for in Books and News, but a message
+    # card is a notification surface, and every notification Apple ships is set
+    # in SF. Mixing a reading face into a UI card is what read as dated.
+    # NY is still wired up in this table if the serif is ever wanted back.
+    ("msg",     SF, 31, [100.0, 32.0, 400.0, 530.0], ASCII, -0.35),
+    ("msg_s",   SF, 24, [100.0, 26.0, 400.0, 550.0], ASCII, -0.15),
+]
+
+
+def bake(name, filename, px, axes, charset, tracking):
+    path = filename if os.path.isabs(filename) else os.path.join(TTF, filename)
+    font = ImageFont.truetype(path, px)
+    font.set_variation_by_axes(axes)
+    ascent, descent = font.getmetrics()
+
+    codes = sorted(ord(c) for c in charset)
+    first, last = codes[0], codes[-1]
+
+    blob = bytearray()
+    glyphs = []
+    for code in range(first, last + 1):
+        ch = chr(code)
+        if ch not in charset:
+            glyphs.append((0, 0, 0, 0, 0, 0))
+            continue
+        # getbbox gives the inked box relative to the pen origin at the baseline.
+        box = font.getbbox(ch, anchor="ls")
+        advance = font.getlength(ch)
+        mask = font.getmask(ch, mode="L")
+        w, h = mask.size
+        if w == 0 or h == 0:
+            glyphs.append((int(round(advance * 16)), 0, 0, 0, 0, 0))
+            continue
+        offset = len(blob)
+        blob.extend(Image.frombytes("L", (w, h), bytes(mask)).tobytes())
+        glyphs.append((int(round(advance * 16)), box[0], box[1], w, h, offset))
+
+    ident = "wg_font_" + name
+    lines = [
+        "/* Generated by tools/bake_fonts.py. Do not edit. */",
+        '#include "wedge/font.h"',
+        "",
+        "static const uint8_t %s_alpha[%d] = {" % (ident, len(blob)),
+    ]
+    for i in range(0, len(blob), 24):
+        lines.append("    " + ",".join("%d" % b for b in blob[i:i + 24]) + ",")
+    lines.append("};")
+    lines.append("")
+    lines.append("static const wg_glyph_t %s_glyphs[%d] = {" % (ident, len(glyphs)))
+    for adv, bx, by, w, h, off in glyphs:
+        lines.append("    {%d,%d,%d,%d,%d,%u}," % (adv, bx, by, w, h, off))
+    lines.append("};")
+    lines.append("")
+    lines.append("const wg_font_t %s = {" % ident)
+    lines.append('    .name = "%s",' % name)
+    lines.append("    .ascent = %d," % ascent)
+    lines.append("    .descent = %d," % descent)
+    lines.append("    .line_height = %d," % (ascent + descent))
+    lines.append("    .first = %d," % first)
+    lines.append("    .last = %d," % last)
+    lines.append("    .tracking = %d," % int(round(tracking * 16)))
+    lines.append("    .glyphs = %s_glyphs," % ident)
+    lines.append("    .alpha = %s_alpha," % ident)
+    lines.append("};")
+    lines.append("")
+
+    path = os.path.join(OUT, "font_%s.c" % name)
+    with open(path, "w") as fh:
+        fh.write("\n".join(lines))
+    return name, len(blob), len(glyphs), ascent, descent
+
+
+def main():
+    os.makedirs(OUT, exist_ok=True)
+    results = [bake(*f) for f in FACES]
+
+    header = [
+        "/* Generated by tools/bake_fonts.py. Do not edit. */",
+        "#ifndef WEDGE_FONTS_H",
+        "#define WEDGE_FONTS_H",
+        "",
+        '#include "wedge/font.h"',
+        "",
+    ]
+    for name, _, _, _, _ in results:
+        header.append("extern const wg_font_t wg_font_%s;" % name)
+    header += ["", "#endif", ""]
+    with open(os.path.join(OUT, "fonts.h"), "w") as fh:
+        fh.write("\n".join(header))
+
+    total = 0
+    for name, blob, n, asc, desc in results:
+        total += blob
+        print("  %-8s %6d bytes  %3d glyphs  ascent %d descent %d" % (name, blob, n, asc, desc))
+    print("  %-8s %6d bytes total" % ("", total))
+
+
+if __name__ == "__main__":
+    sys.exit(main())
