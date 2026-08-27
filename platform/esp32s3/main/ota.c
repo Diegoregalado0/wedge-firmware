@@ -38,6 +38,16 @@ void ota_confirm(void)
     }
 }
 
+bool ota_awaiting_proof(void)
+{
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    esp_ota_img_states_t state;
+    if (esp_ota_get_state_partition(running, &state) != ESP_OK) {
+        return false;
+    }
+    return state == ESP_OTA_IMG_PENDING_VERIFY;
+}
+
 /* The manifest, small and fixed shape. */
 typedef struct {
     char version[40];

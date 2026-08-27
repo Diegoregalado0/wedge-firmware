@@ -55,6 +55,12 @@ export async function publish(binary: ArrayBuffer, version: string): Promise<Man
     return memory;
   }
 
+  /* What is already here, captured before anything new is written. Listing
+   * after the upload would include the binary that was just published, and
+   * the cleanup at the end would then delete the very file the manifest
+   * points at. It did exactly that, and the device reported a 404. */
+  const before = await list({ token: blobToken, prefix: PREFIX });
+
   const bin = await put(`${PREFIX}wedge.bin`, binary, {
     token: blobToken,
     access: "public",
@@ -63,17 +69,15 @@ export async function publish(binary: ArrayBuffer, version: string): Promise<Man
   });
   manifest.url = bin.url;
 
-  /* The manifest is written after the binary it points at, so a manifest that
-   * exists always refers to something the device can actually fetch. */
-  const before = await list({ token: blobToken, prefix: PREFIX });
+  /* The manifest goes second, so one that exists always refers to something
+   * the device can actually fetch. */
   await put(`${PREFIX}manifest.json`, JSON.stringify(manifest), {
     token: blobToken,
     access: "public",
     addRandomSuffix: true,
     contentType: "application/json",
   });
-  /* Only now are the previous ones removed, and only the ones that were there
-   * before this publish began. */
+
   const stale = before.blobs.map((b) => b.url);
   if (stale.length > 0) {
     await del(stale, { token: blobToken }).catch(() => {});

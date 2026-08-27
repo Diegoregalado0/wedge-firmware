@@ -289,6 +289,8 @@ static void net_task(void *arg)
         /* Seeded at boot rather than zero, so a device that restarts often is
            not checking for firmware on every single boot. */
         static int64_t last_ota_check;
+        /* When a build on trial runs out of time to prove itself. */
+        static int64_t proof_deadline;
         int64_t now_s = host_now_unix(NULL);
         if (now_s - last_clock_save > 1800) {
             last_clock_save = now_s;
@@ -312,6 +314,24 @@ static void net_task(void *arg)
                 s_restart_pending = true;
             }
         }
+        /* A new image that has not proved itself gets a few minutes to do so
+           and is then restarted out of. Rollback happens at boot and nowhere
+           else, so without this a build that cannot reach the backend keeps
+           running, broken, having never been confirmed and having no reason
+           to reboot. Restarting is what hands it back to the bootloader,
+           which puts the previous one in its place. */
+        if (ota_awaiting_proof()) {
+            if (proof_deadline == 0) {
+                proof_deadline = now_s + 300;
+            } else if (now_s > proof_deadline) {
+                ESP_LOGE(TAG, "this build never reached the backend; going back");
+                vTaskDelay(pdMS_TO_TICKS(200));
+                esp_restart();
+            }
+        } else {
+            proof_deadline = 0;
+        }
+
         /* Held until she is not reading something. The card is the only thing
            whose disappearance mid-sentence would be noticed. */
         if (s_restart_pending && s_app && s_app->state != WG_ST_MESSAGE_PRESENTATION) {

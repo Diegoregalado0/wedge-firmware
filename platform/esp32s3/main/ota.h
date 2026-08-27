@@ -31,4 +31,11 @@ void ota_confirm(void);
    out of the way. */
 bool ota_in_progress(void);
 
+/* True when the running image is on trial and has not yet proved itself.
+   Rollback only happens at boot, so an image that cannot reach the backend
+   would otherwise sit there broken forever, having never been confirmed and
+   having no reason to restart. The caller gives it a while and then restarts
+   it, which is what lets the bootloader put the working one back. */
+bool ota_awaiting_proof(void);
+
 #endif
