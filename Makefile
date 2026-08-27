@@ -82,7 +82,16 @@ test-tz: $(CORE)
 	$(CC) $(CORE_ONLY_CFLAGS) $(CORE) tools/test_timezone.c -o $(BUILD)/test-tz -lm
 	./$(BUILD)/test-tz
 
-test: wasm test-moon test-tz
+# The RGB565 conversion is the hottest loop in a frame and was rewritten into
+# table lookups. This checks it against the arithmetic it replaced, including
+# the ends of the range where the clamp is what matters.
+test-convert: $(CORE)
+	@mkdir -p $(BUILD)
+	$(CC) $(CORE_ONLY_CFLAGS) core/src/canvas.c core/src/text.c \
+		tools/test_convert.c -o $(BUILD)/test-convert -lm
+	./$(BUILD)/test-convert
+
+test: wasm test-moon test-tz test-convert
 	cd $(BUILD)/wasm && node test.mjs && node bank.mjs
 
-.PHONY: fonts run clean shots wasm test test-tz
+.PHONY: fonts run clean shots wasm test test-tz test-convert

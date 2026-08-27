@@ -953,8 +953,44 @@ static const uint8_t k_bayer[8][8] = {
     { 63, 31, 55, 23, 61, 29, 53, 21 },
 };
 
+/* The dither offset and the clamp, precomputed.
+ *
+ * The Bayer threshold only ever produces eight distinct offsets for red and
+ * blue and four for green, and the input is a byte, so the whole of
+ * "add the offset, clamp to a byte, drop to five or six bits" is a small table
+ * per offset. Three byte loads a pixel instead of three adds, three pairs of
+ * comparisons and three shifts, across a hundred and thirty thousand pixels a
+ * frame. Three kilobytes, built once. */
+static uint8_t s_dith_rb[8][256];
+static uint8_t s_dith_g[4][256];
+static bool s_dith_ready;
+
+static void build_dither_tables(void)
+{
+    for (int o = 0; o < 8; o++) {
+        int add = o - 4;
+        for (int v = 0; v < 256; v++) {
+            int t = v + add;
+            t = t < 0 ? 0 : (t > 255 ? 255 : t);
+            s_dith_rb[o][v] = (uint8_t)(t >> 3);
+        }
+    }
+    for (int o = 0; o < 4; o++) {
+        int add = o - 2;
+        for (int v = 0; v < 256; v++) {
+            int t = v + add;
+            t = t < 0 ? 0 : (t > 255 ? 255 : t);
+            s_dith_g[o][v] = (uint8_t)(t >> 2);
+        }
+    }
+    s_dith_ready = true;
+}
+
 void wg_to_rgb565_rows(const wg_canvas_t *c, uint16_t *out, int y0, int rows)
 {
+    if (!s_dith_ready) {
+        build_dither_tables();
+    }
     const int w = c->w;
     for (int y = y0; y < y0 + rows; y++) {
         const uint32_t *row = wg_row_at(c, y);
@@ -962,26 +998,34 @@ void wg_to_rgb565_rows(const wg_canvas_t *c, uint16_t *out, int y0, int rows)
            Bayer threshold has to keep its phase across a band boundary or the
            seams become visible lines in a gradient. */
         uint16_t *orow = &out[(size_t)(y - y0) * w];
-        /* The dither offsets repeat every eight columns, so they are worked out
-           once per row rather than re-derived from the matrix per pixel. Red
-           and blue quantize to 5 bits, green to 6, so the amplitude differs
-           per channel. */
-        int drb[8], dg[8];
+
+        /* The eight columns of the matrix repeat across the row, so the tables
+           they select are picked once here rather than per pixel. */
+        const uint8_t *trb[8];
+        const uint8_t *tg[8];
         for (int i = 0; i < 8; i++) {
             int thr = k_bayer[y & 7][i];
-            drb[i] = (thr >> 3) - 4;
-            dg[i] = (thr >> 4) - 2;
+            trb[i] = s_dith_rb[(thr >> 3) & 7];
+            tg[i] = s_dith_g[(thr >> 4) & 3];
         }
-        for (int x = 0; x < w; x++) {
+
+        int x = 0;
+        /* Eight at a time, so the column index is a constant in each step and
+           the table pointer is settled before the loop body runs. */
+        for (; x + 8 <= w; x += 8) {
+            for (int i = 0; i < 8; i++) {
+                uint32_t p = row[x + i];
+                orow[x + i] = (uint16_t)((trb[i][(p >> 16) & 0xFF] << 11) |
+                                         (tg[i][(p >> 8) & 0xFF] << 5) |
+                                         trb[i][p & 0xFF]);
+            }
+        }
+        for (; x < w; x++) {
             uint32_t p = row[x];
-            int k = x & 7;
-            int r = (int)((p >> 16) & 0xFF) + drb[k];
-            int g = (int)((p >> 8) & 0xFF) + dg[k];
-            int b = (int)(p & 0xFF) + drb[k];
-            r = r < 0 ? 0 : (r > 255 ? 255 : r);
-            g = g < 0 ? 0 : (g > 255 ? 255 : g);
-            b = b < 0 ? 0 : (b > 255 ? 255 : b);
-            orow[x] = (uint16_t)(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
+            int i = x & 7;
+            orow[x] = (uint16_t)((trb[i][(p >> 16) & 0xFF] << 11) |
+                                 (tg[i][(p >> 8) & 0xFF] << 5) |
+                                 trb[i][p & 0xFF]);
         }
     }
 }
