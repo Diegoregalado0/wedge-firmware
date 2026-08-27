@@ -34,29 +34,41 @@ function Preview({ text, type }: { text: string; type: MessageType }) {
   );
 }
 
+/* One shape for every timestamp on the page. Composed from the parts rather
+   than taken from a locale string, because the locale wants to write "at"
+   between the date and the time. */
+function stamp(t: number): string {
+  const d = new Date(t * 1000);
+  const date = d.toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+  const time = d.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+  return `${date}, ${time.replace(/\s(AM|PM)$/, (_m, p: string) => " " + p.toLowerCase())}`;
+}
+
 /* Where a message has got to, as three places rather than two.
  *
- * Sent and read were the only states the server knew, which put a message that
- * is still sitting here waiting for the next poll in the same bucket as one
- * that is already lit up on her table. Those are different things to know: the
- * first is still on its way, the second has arrived and not been looked at. */
-function stateOf(m: Message): { label: string; tone: string } {
+ * Sent and read were the only states the server knew, which put a message
+ * still waiting for the next poll in the same bucket as one already lit up on
+ * her table. Those are different things to know.
+ *
+ * A scheduled message is fetched ahead of its hour so the device can show it
+ * without the network, so having been handed over is not on its own enough to
+ * call it delivered; it also has to be due. Until then it is still Sent. */
+function stateOf(m: Message): { label: string; at: number; tone: string } {
   if (m.status === "read") {
-    return {
-      label: `Opened ${new Date((m.read_at ?? 0) * 1000).toLocaleString()}`,
-      tone: "done",
-    };
+    return { label: "Read", at: m.read_at ?? m.created_at, tone: "done" };
   }
-  if (m.available_at * 1000 > Date.now()) {
-    return {
-      label: `Scheduled for ${new Date(m.available_at * 1000).toLocaleString()}`,
-      tone: "later",
-    };
+  if (m.delivered_at && m.available_at * 1000 <= Date.now()) {
+    return { label: "Delivered", at: m.delivered_at, tone: "there" };
   }
-  if (m.delivered_at) {
-    return { label: "Waiting on her screen", tone: "there" };
-  }
-  return { label: "Sent, not picked up by the Wedge yet", tone: "sending" };
+  return { label: "Sent", at: m.created_at, tone: "sending" };
 }
 
 export default function Page() {
@@ -357,7 +369,7 @@ export default function Page() {
                 <p className="text">{m.text}</p>
                 <p className="meta">
                   <span className={`dot ${stateOf(m).tone}`} />
-                  {stateOf(m).label}
+                  {stateOf(m).label} {stamp(stateOf(m).at)}
                 </p>
               </div>
               <button onClick={() => void drop(m.id)} aria-label="Delete">

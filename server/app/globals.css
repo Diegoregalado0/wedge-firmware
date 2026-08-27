@@ -500,10 +500,6 @@ button.ghost {
   background: #6b6762;
 }
 
-.dot.later {
-  background: #6f7fa8;
-}
-
 .dot.there {
   background: var(--accent);
   box-shadow: 0 0 0 3px rgba(232, 147, 92, 0.16);
