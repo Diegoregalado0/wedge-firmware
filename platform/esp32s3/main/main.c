@@ -96,7 +96,8 @@ static volatile uint8_t s_brightness = 0;
 static wg_app_t *s_app;
 
 static uint32_t *s_canvas;
-static uint16_t *s_band;
+/* Two, so one can be going out over the wire while the next is being filled. */
+static uint16_t *s_band[2];
 
 /* Host interface implementation. These run on the UI task. */
 
@@ -443,10 +444,21 @@ static void ui_task(void *arg)
         wg_app_render(&app, &canvas);
         /* Converted and pushed a band at a time. The dither reads absolute y,
            so the bands are seamless. */
+        int slot = 0;
+        bool inflight = false;
         for (int y0 = 0; y0 < WG_H; y0 += RM67162_BAND) {
             int rows = WG_H - y0 < RM67162_BAND ? WG_H - y0 : RM67162_BAND;
-            wg_to_rgb565_rows(&canvas, s_band, y0, rows);
-            rm67162_blit_rows(s_band, y0, rows);
+            wg_to_rgb565_rows(&canvas, s_band[slot], y0, rows);
+            /* The previous band has had a whole conversion to finish in. */
+            if (inflight) {
+                rm67162_blit_wait();
+            }
+            rm67162_blit_rows(s_band[slot], y0, rows);
+            inflight = true;
+            slot ^= 1;
+        }
+        if (inflight) {
+            rm67162_blit_wait();
         }
 
         /* Nothing held back while something is moving: a frame already costs
@@ -470,9 +482,11 @@ void app_main(void)
        would take all of internal SRAM and leave nothing for the TLS stack. The
        band the panel is fed from has to be internal, so it is kept small. */
     s_canvas = heap_caps_malloc((size_t)WG_W * WG_H * sizeof(uint32_t), MALLOC_CAP_SPIRAM);
-    s_band = heap_caps_malloc((size_t)WG_W * RM67162_BAND * sizeof(uint16_t),
-                              MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
-    if (!s_canvas || !s_band) {
+    s_band[0] = heap_caps_malloc((size_t)WG_W * RM67162_BAND * sizeof(uint16_t),
+                                 MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+    s_band[1] = heap_caps_malloc((size_t)WG_W * RM67162_BAND * sizeof(uint16_t),
+                                 MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+    if (!s_canvas || !s_band[0] || !s_band[1]) {
         /* Without buffers there is no display, which section 41 calls a
            display initialization failure. Restarting is the honest response;
            there is no degraded mode that still shows her the time. */

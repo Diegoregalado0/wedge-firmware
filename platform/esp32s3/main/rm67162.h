@@ -23,11 +23,16 @@ void rm67162_set_brightness(uint8_t level);
 
 void rm67162_sleep(bool on);
 
-/* Push rows [y0, y0 + rows) from an internal, DMA-capable buffer holding just
-   that band. Blocks until the transfer completes. Byte-swaps the buffer in
-   place to the wire order the panel wants, so the caller's copy is left with
-   its bytes transposed afterward; harmless here since it is about to be
-   overwritten by the next band's conversion anyway. */
+/* Queue rows [y0, y0 + rows) from an internal, DMA-capable buffer holding just
+   that band. Returns as soon as the transfer is handed to DMA, so the caller
+   can get on with the next band; call rm67162_blit_wait before touching this
+   buffer again. Byte-swaps it in place to the wire order the panel wants, so
+   the caller's copy is left transposed afterward, which is harmless because it
+   is about to be overwritten by the next band's conversion. */
 void rm67162_blit_rows(uint16_t *pixels, int y0, int rows);
+
+/* Blocks until the transfer started by the last rm67162_blit_rows has landed.
+   Must be called before that buffer is written to again. */
+void rm67162_blit_wait(void);
 
 #endif

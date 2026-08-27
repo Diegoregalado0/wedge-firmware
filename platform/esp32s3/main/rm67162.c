@@ -185,7 +185,15 @@ void rm67162_blit_rows(uint16_t *pixels, int y0, int rows)
         pixels[i] = (uint16_t)((pixels[i] << 8) | (pixels[i] >> 8));
     }
 
+    /* Queued, not waited on. The transfer is DMA and the CPU has another band
+       to convert while it runs; the caller waits before it reuses the buffer.
+       Roughly a seventh of the frame was previously spent watching a
+       semaphore with the panel busy and nothing else happening. */
     esp_lcd_panel_io_tx_color(s_io, (int)QSPI_WRITE_COLOR(CMD_RAMWR), pixels,
                               (size_t)RM67162_W * rows * 2);
+}
+
+void rm67162_blit_wait(void)
+{
     xSemaphoreTake(s_flush_done, pdMS_TO_TICKS(200));
 }
