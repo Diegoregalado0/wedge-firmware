@@ -15,6 +15,7 @@
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_netif_sntp.h"
+#include "esp_timer.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -34,6 +35,17 @@ static char s_token[96];
 static volatile bool s_connected;
 static int s_backoff_s = 1;
 
+static esp_timer_handle_t s_retry_timer;
+/* When the station last held an address, in milliseconds of uptime. Zero means
+   it never has, which is the case for a device carried to a new house. */
+static int64_t s_last_up_ms;
+
+static void retry_connect(void *arg)
+{
+    (void)arg;
+    esp_wifi_connect();
+}
+
 static void on_wifi(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
@@ -46,19 +58,32 @@ static void on_wifi(void *arg, esp_event_base_t base, int32_t id, void *data)
            line on a path that only runs when something is already wrong. */
         wifi_event_sta_disconnected_t *d = (wifi_event_sta_disconnected_t *)data;
         ESP_LOGW(TAG, "disconnected, reason %d, retrying in %ds", d ? d->reason : -1, s_backoff_s);
+        if (s_connected) {
+            s_last_up_ms = (int64_t)(esp_timer_get_time() / 1000);
+        }
         s_connected = false;
         provision_note_sta_event(false);
         if (s_cb.on_wifi) {
             s_cb.on_wifi(false);
         }
-        /* Exponential backoff, capped. Hammering a router that is simply off
-           costs power and achieves nothing, and section 37 asks for exactly
-           this rather than a continuous retry loop. */
-        vTaskDelay(pdMS_TO_TICKS(s_backoff_s * 1000));
+        /* Exponential backoff, capped, on a timer rather than by sleeping
+           here. This runs on the event loop task, and waiting in it stops
+           every other Wi-Fi and IP event for the length of the wait: with a
+           network that has genuinely gone away the backoff reaches a minute,
+           which is long enough to stall the setup access point that gets
+           raised in exactly that situation. */
+        if (!s_retry_timer) {
+            const esp_timer_create_args_t args = { .callback = retry_connect, .name = "wifi_retry" };
+            esp_timer_create(&args, &s_retry_timer);
+        }
+        if (s_retry_timer) {
+            esp_timer_stop(s_retry_timer);
+            esp_timer_start_once(s_retry_timer, (uint64_t)s_backoff_s * 1000000ULL);
+        }
         s_backoff_s = s_backoff_s < 64 ? s_backoff_s * 2 : 64;
-        esp_wifi_connect();
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         s_connected = true;
+        s_last_up_ms = 0;
         s_backoff_s = 1;
         provision_note_sta_event(true);
         if (s_cb.on_wifi) {
@@ -153,6 +178,19 @@ esp_err_t net_init(const net_config_t *cfg, const net_callbacks_t *cb)
 bool net_connected(void)
 {
     return s_connected;
+}
+
+uint32_t net_unreachable_seconds(void)
+{
+    if (s_connected) {
+        return 0;
+    }
+    /* Measured from the last time it worked, or from boot when it never has,
+       which is the case that matters: a device carried to a new house has no
+       last-known-good moment to count from. */
+    int64_t now = (int64_t)(esp_timer_get_time() / 1000);
+    int64_t since = s_last_up_ms > 0 ? s_last_up_ms : 0;
+    return (uint32_t)((now - since) / 1000);
 }
 
 static wg_msg_type_t type_from(const char *s)

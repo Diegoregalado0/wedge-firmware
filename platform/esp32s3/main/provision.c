@@ -600,14 +600,21 @@ void provision_run(provision_cb_t cb, void *ctx)
        distinguishable on a phone's Wi-Fi list. */
     snprintf(s_ap_name, sizeof(s_ap_name), "Wedge Setup %02X%02X", mac[4], mac[5]);
 
-    /* Setup runs instead of net_init, not after it, so nothing has been brought
-       up yet and this owns the whole stack. The station interface exists too:
-       the access point is how the phone talks to us, but the credentials it
-       hands over have to be tried on a real network before they are kept. */
-    ESP_ERROR_CHECK(esp_netif_init());
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    /* Two ways in, and they arrive with the radio in different states.
+
+       On a device with no stored network this runs instead of net_init and
+       owns the whole stack. On one whose network has disappeared it runs
+       alongside a station that is already up and still retrying, so whatever
+       is already there must not be built a second time: initialising the event
+       loop or the driver again is an error, and aborting here would turn a
+       missing router into a boot loop. */
+    bool stack_up = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF") != NULL;
+    if (!stack_up) {
+        ESP_ERROR_CHECK(esp_netif_init());
+        ESP_ERROR_CHECK(esp_event_loop_create_default());
+        esp_netif_create_default_wifi_sta();
+    }
     esp_netif_t *ap_netif = esp_netif_create_default_wifi_ap();
-    esp_netif_create_default_wifi_sta();
 
     /* The AP's own DHCP server does not hand out a DNS server by default: the
        offer is a flag that ships off, so a phone that joins gets an address
@@ -624,12 +631,18 @@ void provision_run(provision_cb_t cb, void *ctx)
     ESP_ERROR_CHECK(esp_netif_dhcps_option(ap_netif, ESP_NETIF_OP_SET, ESP_NETIF_DOMAIN_NAME_SERVER,
                                            &offer_dns, sizeof(offer_dns)));
 
-    wifi_init_config_t init = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&init));
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED,
-                                                        on_sta, NULL, NULL));
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP,
-                                                        on_sta, NULL, NULL));
+    if (!stack_up) {
+        wifi_init_config_t init = WIFI_INIT_CONFIG_DEFAULT();
+        ESP_ERROR_CHECK(esp_wifi_init(&init));
+    }
+    if (!stack_up) {
+        /* net_init registers handlers that already forward these, so a second
+           set is only needed when it is not running. */
+        ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED,
+                                                            on_sta, NULL, NULL));
+        ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP,
+                                                            on_sta, NULL, NULL));
+    }
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, WIFI_EVENT_AP_STACONNECTED,
                                                         on_ap, NULL, NULL));
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, WIFI_EVENT_AP_STADISCONNECTED,
@@ -647,7 +660,8 @@ void provision_run(provision_cb_t cb, void *ctx)
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap));
-    ESP_ERROR_CHECK(esp_wifi_start());
+    /* Already running when the station brought it up, which is not an error. */
+    esp_wifi_start();
 
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.max_uri_handlers = 4;

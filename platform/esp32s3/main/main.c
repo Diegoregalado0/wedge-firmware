@@ -85,11 +85,19 @@ static void seed_clock(void)
    gesture is unavailable: that combination puts the chip in download mode. */
 #define FORGET_WARN_MS 4000
 #define FORGET_MS 10000
+/* Ten minutes. Long enough that a router rebooting, or a house losing power
+   for a few minutes, never puts the panel into setup; short enough that
+   somebody who has just changed their network is not left waiting. */
+#define WIFI_LOST_GRACE_S 600
 
 static QueueHandle_t s_events;   /* wg_event_t, into the UI task */
 static QueueHandle_t s_messages; /* wg_message_t, into the UI task */
 static QueueHandle_t s_acks;     /* message ids, out to the network task */
 static volatile bool s_poll_requested;
+static void provision_task(void *arg);
+/* Setup is offered once per boot at most, so a network that stays gone does
+   not restart the access point every ten minutes. */
+static bool s_setup_offered;
 static volatile uint8_t s_brightness = 0;
 /* Setup owns the whole device while it runs, including the panel, so it reports
    its stage straight into the app the UI task is rendering. */
@@ -250,6 +258,22 @@ static void net_task(void *arg)
                 break;
             }
         }
+        /* A network that has been gone this long is not coming back on its
+           own, and the person standing in front of the device has no way to
+           tell it about the new one: the button that would is on the bare
+           board, behind the enclosure. So setup is offered unasked.
+
+           The stored network is deliberately not erased. It stays the one the
+           station keeps retrying underneath, so a router that was merely
+           unplugged for an afternoon heals with nobody doing anything, and
+           the offer costs nothing if it is ignored. */
+        if (!s_setup_offered && net_unreachable_seconds() > WIFI_LOST_GRACE_S) {
+            s_setup_offered = true;
+            ESP_LOGW(TAG, "network unreachable for %us, offering setup",
+                    (unsigned)net_unreachable_seconds());
+            xTaskCreatePinnedToCore(provision_task, "prov", 6144, NULL, 4, NULL, 0);
+        }
+
         /* Half-hourly, so a device that has been up for days does not fall
            back to a stale timestamp after a power cut. Rare enough that flash
            wear over the life of the device is not a consideration. */

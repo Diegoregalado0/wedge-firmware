@@ -2,6 +2,7 @@
 #define NET_H
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #include "esp_err.h"
 #include "esp_wifi.h"
@@ -47,6 +48,11 @@ net_reach_t net_probe_reachability(void);
 
 esp_err_t net_init(const net_config_t *cfg, const net_callbacks_t *cb);
 bool net_connected(void);
+
+/* How long the stored network has been unreachable, in seconds, or 0 while it
+   is joined. A router that was replaced looks exactly like one that is briefly
+   off, and only the passage of time separates them. */
+uint32_t net_unreachable_seconds(void);
 void net_poll_messages(void);
 void net_poll_ambient(void);
 /* Returns false if the acknowledgement could not be delivered, in which case
