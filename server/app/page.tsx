@@ -61,14 +61,18 @@ function stamp(t: number): string {
  * A scheduled message is fetched ahead of its hour so the device can show it
  * without the network, so having been handed over is not on its own enough to
  * call it delivered; it also has to be due. Until then it is still Sent. */
-function stateOf(m: Message): { label: string; at: number; tone: string } {
+function stateOf(m: Message): { label: string; at: number | null; tone: string } {
+  /* Only the reading is worth a time. The other two are steps on the way and
+     the question they answer is where it has got to, not when: a message that
+     is sent or waiting is going to move again shortly, and stamping those puts
+     three times on a row where one of them matters. */
   if (m.status === "read") {
     return { label: "Read", at: m.read_at ?? m.created_at, tone: "done" };
   }
   if (m.delivered_at && m.available_at * 1000 <= Date.now()) {
-    return { label: "Delivered", at: m.delivered_at, tone: "there" };
+    return { label: "Delivered", at: null, tone: "there" };
   }
-  return { label: "Sent", at: m.created_at, tone: "sending" };
+  return { label: "Sent", at: null, tone: "sending" };
 }
 
 export default function Page() {
@@ -369,7 +373,8 @@ export default function Page() {
                 <p className="text">{m.text}</p>
                 <p className="meta">
                   <span className={`dot ${stateOf(m).tone}`} />
-                  {stateOf(m).label} {stamp(stateOf(m).at)}
+                  {stateOf(m).label}
+                  {stateOf(m).at !== null ? ` ${stamp(stateOf(m).at as number)}` : ""}
                 </p>
               </div>
               <button onClick={() => void drop(m.id)} aria-label="Delete">
