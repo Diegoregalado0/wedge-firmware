@@ -153,6 +153,7 @@ export function create(input: MessageInput): Message {
     available_at: input.available_at ?? now,
     expires_at: input.expires_at ?? 0,
     status: "available",
+    delivered_at: null,
     read_at: null,
   };
 }

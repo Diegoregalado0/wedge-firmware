@@ -29,6 +29,11 @@ export interface Message {
   available_at: number;
   expires_at: number;
   status: MessageStatus;
+  /* When the device first fetched it. A message can sit on the server for up
+   * to a poll interval before the Wedge has ever seen it, and that is a
+   * genuinely different state from being on her screen: one is still in the
+   * post, the other has arrived. Null until the device asks for it. */
+  delivered_at: number | null;
   read_at: number | null;
 }
 

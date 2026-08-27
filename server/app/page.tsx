@@ -34,6 +34,31 @@ function Preview({ text, type }: { text: string; type: MessageType }) {
   );
 }
 
+/* Where a message has got to, as three places rather than two.
+ *
+ * Sent and read were the only states the server knew, which put a message that
+ * is still sitting here waiting for the next poll in the same bucket as one
+ * that is already lit up on her table. Those are different things to know: the
+ * first is still on its way, the second has arrived and not been looked at. */
+function stateOf(m: Message): { label: string; tone: string } {
+  if (m.status === "read") {
+    return {
+      label: `Opened ${new Date((m.read_at ?? 0) * 1000).toLocaleString()}`,
+      tone: "done",
+    };
+  }
+  if (m.available_at * 1000 > Date.now()) {
+    return {
+      label: `Scheduled for ${new Date(m.available_at * 1000).toLocaleString()}`,
+      tone: "later",
+    };
+  }
+  if (m.delivered_at) {
+    return { label: "Waiting on her screen", tone: "there" };
+  }
+  return { label: "Sent, not picked up by the Wedge yet", tone: "sending" };
+}
+
 export default function Page() {
   const [authed, setAuthed] = useState(false);
   const [password, setPassword] = useState("");
@@ -331,11 +356,8 @@ export default function Page() {
               <div>
                 <p className="text">{m.text}</p>
                 <p className="meta">
-                  {m.status === "read"
-                    ? `read ${new Date((m.read_at ?? 0) * 1000).toLocaleString()}`
-                    : m.available_at * 1000 > Date.now()
-                      ? `waiting until ${new Date(m.available_at * 1000).toLocaleString()}`
-                      : "on her table now"}
+                  <span className={`dot ${stateOf(m).tone}`} />
+                  {stateOf(m).label}
                 </p>
               </div>
               <button onClick={() => void drop(m.id)} aria-label="Delete">
