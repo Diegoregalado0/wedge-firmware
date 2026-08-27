@@ -90,6 +90,10 @@ static void seed_clock(void)
    for a few minutes, never puts the panel into setup; short enough that
    somebody who has just changed their network is not left waiting. */
 #define WIFI_LOST_GRACE_S 600
+/* How long after boot the first firmware check happens. Long enough to be out
+   of the way of starting up, short enough that a power cycle is still a way to
+   make a device pick up a fix promptly. */
+#define OTA_FIRST_CHECK_S 120
 
 static QueueHandle_t s_events;   /* wg_event_t, into the UI task */
 static QueueHandle_t s_messages; /* wg_message_t, into the UI task */
@@ -286,12 +290,18 @@ static void net_task(void *arg)
            wear over the life of the device is not a consideration. */
         static int64_t last_clock_save;
         static int64_t last_retry;
-        /* Seeded at boot rather than zero, so a device that restarts often is
-           not checking for firmware on every single boot. */
+        /* Zero would mean the very first pass through this loop checks for
+           firmware, which puts an update attempt in front of a device that has
+           just started and may be about to be power-cycled again. Seeded on
+           the first iteration so the first check lands a couple of minutes in
+           and every one after that a day apart. */
         static int64_t last_ota_check;
         /* When a build on trial runs out of time to prove itself. */
         static int64_t proof_deadline;
         int64_t now_s = host_now_unix(NULL);
+        if (last_ota_check == 0) {
+            last_ota_check = now_s - 24 * 3600 + OTA_FIRST_CHECK_S;
+        }
         if (now_s - last_clock_save > 1800) {
             last_clock_save = now_s;
             store_set_time(now_s);

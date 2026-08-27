@@ -249,6 +249,47 @@ void wg_fill_under(wg_canvas_t *c, const float *height, int n, wg_color color)
    spreads the curvature into the flat, which is the squircle every current
    Apple surface is built from. The powf only runs on true corner pixels, a few
    hundred per card, so it costs nothing measurable. */
+/* The same field, and the direction it points, in one evaluation.
+ *
+ * The specular highlight needs the outward normal, and took it by sampling the
+ * field four more times around each pixel. That is a million evaluations a
+ * frame on the message card, and it is unnecessary: the gradient of this
+ * particular field is available in closed form. For the corner it is the
+ * gradient of the fourth-power norm, and along the flat edges it is simply the
+ * axis the nearest edge lies on.
+ *
+ * The result is not normalised here, only pointed the right way; the caller
+ * normalises what it needs. */
+static float rrect_sd_grad(float px, float py, float cx, float cy, float hw, float hh, float r,
+                           float *nx, float *ny)
+{
+    float dx = px - cx, dy = py - cy;
+    float sx = dx < 0.0f ? -1.0f : 1.0f;
+    float sy = dy < 0.0f ? -1.0f : 1.0f;
+    float qx = (dx < 0.0f ? -dx : dx) - (hw - r);
+    float qy = (dy < 0.0f ? -dy : dy) - (hh - r);
+
+    if (qx > 0.0f && qy > 0.0f) {
+        float a2 = qx * qx, b2 = qy * qy;
+        float sum = a2 * a2 + b2 * b2;
+        float root2 = sqrtf(sum);       /* sum^(1/2) */
+        float root4 = sqrtf(root2);     /* sum^(1/4) */
+        /* d(sum^(1/4))/dqx = qx^3 * sum^(-3/4) */
+        float inv = (root2 * root4) > 1e-12f ? 1.0f / (root2 * root4) : 0.0f;
+        *nx = sx * qx * a2 * inv;
+        *ny = sy * qy * b2 * inv;
+        return root4 - r;
+    }
+    if (qx > qy) {
+        *nx = sx;
+        *ny = 0.0f;
+        return qx - r;
+    }
+    *nx = 0.0f;
+    *ny = sy;
+    return qy - r;
+}
+
 static float rrect_sd(float px, float py, float cx, float cy, float hw, float hh, float r)
 {
     float qx = fabsf(px - cx) - (hw - r);
@@ -478,16 +519,13 @@ void wg_round_rect_specular(wg_canvas_t *c, float x, float y, float w, float h, 
     for (int py = y0; py < y1; py++) {
         for (int px = x0; px < x1; px++) {
             float fx = (float)px + 0.5f, fy = (float)py + 0.5f;
-            float d = rrect_sd(fx, fy, cx, cy, hw, hh, r);
+            float nx, ny;
+            float d = rrect_sd_grad(fx, fy, cx, cy, hw, hh, r, &nx, &ny);
             /* A band straddling the outline, biased inward: the lip belongs to
                the surface, not to the air beside it. */
             if (d > 0.9f || d < -2.6f) {
                 continue;
             }
-            /* Outward normal from the field's own gradient. */
-            const float e = 0.6f;
-            float nx = rrect_sd(fx + e, fy, cx, cy, hw, hh, r) - rrect_sd(fx - e, fy, cx, cy, hw, hh, r);
-            float ny = rrect_sd(fx, fy + e, cx, cy, hw, hh, r) - rrect_sd(fx, fy - e, cx, cy, hw, hh, r);
             float nl = sqrtf(nx * nx + ny * ny);
             if (nl < 1e-5f) {
                 continue;
