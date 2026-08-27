@@ -19,6 +19,7 @@
 #include "freertos/task.h"
 #include "net.h"
 #include "provision.h"
+#include "ota.h"
 #include "relay.h"
 #include "rm67162.h"
 #include "store.h"
@@ -98,6 +99,8 @@ static void provision_task(void *arg);
 /* Setup is offered once per boot at most, so a network that stays gone does
    not restart the access point every ten minutes. */
 static bool s_setup_offered;
+/* An image is written and verified, waiting only for a quiet moment. */
+static volatile bool s_restart_pending;
 static volatile uint8_t s_brightness = 0;
 /* Setup owns the whole device while it runs, including the panel, so it reports
    its stage straight into the app the UI task is rendering. */
@@ -221,6 +224,10 @@ static void on_poll_failed(void)
 static void on_poll_ok(void)
 {
     s_poll_fail_streak = 0;
+    /* Reaching the backend is the proof a freshly written image needs. Until
+       this is called the bootloader will put the previous one back on the next
+       restart, which is what makes a bad update undo itself. */
+    ota_confirm();
     if (relay_active()) {
         relay_stop();
         if (s_app) {
@@ -279,6 +286,9 @@ static void net_task(void *arg)
            wear over the life of the device is not a consideration. */
         static int64_t last_clock_save;
         static int64_t last_retry;
+        /* Seeded at boot rather than zero, so a device that restarts often is
+           not checking for firmware on every single boot. */
+        static int64_t last_ota_check;
         int64_t now_s = host_now_unix(NULL);
         if (now_s - last_clock_save > 1800) {
             last_clock_save = now_s;
@@ -291,6 +301,25 @@ static void net_task(void *arg)
            every twenty seconds so the panel can explain itself. */
         bool retry_due = s_poll_fail_streak > 0 && s_poll_fail_streak < 6 &&
                          now_s - last_retry > 20;
+        /* Once a day, and only while the panel is idle. An update is written
+           to the other slot with the device still running, so the only visible
+           moment is the restart, and that waits for a frame with nothing on
+           it. Checking more often would achieve nothing: there is one person
+           publishing builds and they are not doing it hourly. */
+        if (net_connected() && now_s - last_ota_check > 24 * 3600) {
+            last_ota_check = now_s;
+            if (ota_check_and_apply(CONFIG_WEDGE_BACKEND_URL, CONFIG_WEDGE_DEVICE_TOKEN)) {
+                s_restart_pending = true;
+            }
+        }
+        /* Held until she is not reading something. The card is the only thing
+           whose disappearance mid-sentence would be noticed. */
+        if (s_restart_pending && s_app && s_app->state != WG_ST_MESSAGE_PRESENTATION) {
+            ESP_LOGW(TAG, "restarting into the new build");
+            vTaskDelay(pdMS_TO_TICKS(200));
+            esp_restart();
+        }
+
         if (s_poll_requested || retry_due) {
             s_poll_requested = false;
             last_retry = now_s;

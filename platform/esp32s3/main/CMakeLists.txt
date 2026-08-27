@@ -29,8 +29,9 @@ set(WEDGE_CORE
     ${WEDGE_ROOT}/core/src/text.c)
 
 idf_component_register(
-    SRCS "main.c" "rm67162.c" "cst816.c" "net.c" "store.c" "provision.c" "relay.c" ${WEDGE_CORE}
+    SRCS "main.c" "rm67162.c" "cst816.c" "net.c" "store.c" "provision.c" "relay.c" "ota.c" ${WEDGE_CORE}
     INCLUDE_DIRS "." "${WEDGE_ROOT}/core/include" "${WEDGE_ROOT}/core/src"
                  "${WEDGE_ROOT}/core/src/faces"
     REQUIRES driver esp_lcd esp_wifi esp_http_client esp_http_server esp-tls nvs_flash json
-             esp_netif esp_event esp_timer lwip mbedtls)
+             esp_netif esp_event esp_timer lwip mbedtls
+             esp_https_ota app_update esp_app_format esp_partition)

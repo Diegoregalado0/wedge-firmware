@@ -49,3 +49,9 @@ CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y
 # that matters. It stays plugged in, so the power difference is not a
 # consideration the way it would be on a battery.
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+
+# A new build has to prove it works before it is kept. The bootloader marks an
+# image pending on first boot and reverts to the previous slot unless the
+# firmware itself confirms it is healthy, which is the only thing standing
+# between a bad update and a device that has to come back to be reflashed.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
