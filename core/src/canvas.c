@@ -330,6 +330,50 @@ static float rrect_half_at(float py, float cy, float hw, float hh, float r)
     return (hw - r) + sqrtf(sqrtf(inner));
 }
 
+/* The columns on one row where an outline band can fall, widened by grow.
+ *
+ * Every one of the glass primitives shades a narrow band and was finding it by
+ * evaluating the distance field across the whole bounding box: a hundred
+ * thousand square roots to light a few thousand pixels. The shape's width on a
+ * row is available directly, so the band is two short runs at the sides, or
+ * the whole width on the few rows level with the flat top and bottom.
+ *
+ * Returns false when the row cannot contain any of the band. */
+static bool rrect_row_band(float py, float cx, float cy, float hw, float hh, float r, float grow,
+                           int w, int *left0, int *left1, int *right0, int *right1)
+{
+    float dy = py - cy;
+    if (dy < 0.0f) {
+        dy = -dy;
+    }
+    if (dy > hh + grow) {
+        return false;
+    }
+    float half = rrect_half_at(py, cy, hw, hh, r);
+    if (half < 0.0f || dy > hh - grow) {
+        /* Level with the ends, where the outline runs across rather than down
+           and the band covers the full width. */
+        *left0 = wg_clampi((int)floorf(cx - hw - grow), 0, w);
+        *left1 = wg_clampi((int)ceilf(cx + hw + grow) + 1, 0, w);
+        *right0 = *right1 = *left1;
+        return *left1 > *left0;
+    }
+    /* The curve is oblique through the corners, so the run is taken from the
+       widest the shape gets within grow rows of here. */
+    float wider = rrect_half_at(py + (dy > 0.0f && py > cy ? -grow : grow), cy, hw, hh, r);
+    float outer = half > wider ? half : (wider > 0.0f ? wider : half);
+    *left0 = wg_clampi((int)floorf(cx - outer - grow), 0, w);
+    *left1 = wg_clampi((int)ceilf(cx - half + grow) + 1, 0, w);
+    *right0 = wg_clampi((int)floorf(cx + half - grow), 0, w);
+    *right1 = wg_clampi((int)ceilf(cx + outer + grow) + 1, 0, w);
+    if (*left1 > *right0) {
+        /* The two runs have met; treat it as one. */
+        *left1 = *right1;
+        *right0 = *right1;
+    }
+    return *left1 > *left0 || *right1 > *right0;
+}
+
 static void rrect_shade(wg_canvas_t *c, float x, float y, float w, float h, float r,
                         wg_color top, wg_color bottom, bool gradient)
 {
@@ -350,16 +394,48 @@ static void rrect_shade(wg_canvas_t *c, float x, float y, float w, float h, floa
     int y1 = wg_clampi((int)ceilf(y + h) + 1, 0, c->h);
 
     for (int py = y0; py < y1; py++) {
+        if (!wg_has_row(c, py)) {
+            continue;
+        }
         float v = h > 1.0f ? ((float)py + 0.5f - y) / h : 0.0f;
         wg_color col = gradient ? wg_color_mix(top, bottom, wg_clampf(v, 0.0f, 1.0f)) : top;
         unsigned base = WG_A(col);
-        for (int pxi = x0; pxi < x1; pxi++) {
+        if (base == 0) {
+            continue;
+        }
+        const unsigned cr = WG_R(col), cg = WG_G(col), cb = WG_B(col);
+        uint32_t *row = wg_row_at(c, py);
+
+        /* The shape's own width on this row, worked out once instead of
+           rediscovered per pixel. Everything more than a pixel inside the
+           outline is fully covered, which on a card is essentially all of it:
+           evaluating the distance field there was a hundred thousand square
+           roots a frame to arrive at a coverage of one. */
+        float half = rrect_half_at((float)py + 0.5f, cy, hw, hh, r);
+        if (half < 0.0f) {
+            continue;
+        }
+        int a = wg_clampi((int)floorf(cx - half) - 1, x0, x1);
+        int b = wg_clampi((int)ceilf(cx + half) + 1, x0, x1);
+        int ai = wg_clampi((int)ceilf(cx - half + 1.0f), a, b);
+        int bi = wg_clampi((int)floorf(cx + half - 1.0f), a, b);
+
+        for (int pxi = a; pxi < ai; pxi++) {
             float d = rrect_sd((float)pxi + 0.5f, (float)py + 0.5f, cx, cy, hw, hh, r);
             float cov = wg_clampf(0.5f - d, 0.0f, 1.0f);
-            if (cov <= 0.0f) {
-                continue;
+            if (cov > 0.0f) {
+                wg_blend_at(row + pxi, cr, cg, cb, (unsigned)(base * cov));
             }
-            wg_blend(c, pxi, py, WG_RGBA(WG_R(col), WG_G(col), WG_B(col), (unsigned)(base * cov)));
+        }
+        for (int pxi = ai; pxi < bi; pxi++) {
+            wg_blend_at(row + pxi, cr, cg, cb, base);
+        }
+        for (int pxi = bi; pxi < b; pxi++) {
+            float d = rrect_sd((float)pxi + 0.5f, (float)py + 0.5f, cx, cy, hw, hh, r);
+            float cov = wg_clampf(0.5f - d, 0.0f, 1.0f);
+            if (cov > 0.0f) {
+                wg_blend_at(row + pxi, cr, cg, cb, (unsigned)(base * cov));
+            }
         }
     }
 }
@@ -472,7 +548,18 @@ void wg_refract(wg_canvas_t *c, float x, float y, float w, float h, float r, flo
         }
         uint32_t *row = wg_row_at(c, py);
         memcpy(s_blur_line, &row[x0], (size_t)span * 4);
-        for (int px = x0; px < x1; px++) {
+        /* Only the rim bends the backdrop; the middle of the glass is flat and
+           shows it straight through. Finding that rim by testing every pixel
+           across the card was most of what this cost. */
+        int l0, l1, r0, r1;
+        if (!rrect_row_band((float)py + 0.5f, cx, cy, hw, hh, r, band + 1.0f, c->w,
+                            &l0, &l1, &r0, &r1)) {
+            continue;
+        }
+        for (int pass = 0; pass < 2; pass++) {
+        int px = pass == 0 ? l0 : r0;
+        int pend = pass == 0 ? l1 : r1;
+        for (; px < pend; px++) {
             float d = rrect_sd((float)px + 0.5f, (float)py + 0.5f, cx, cy, hw, hh, r);
             if (d > 0.0f || d < -band) {
                 continue;
@@ -486,6 +573,7 @@ void wg_refract(wg_canvas_t *c, float x, float y, float w, float h, float r, flo
             int src = px - x0 + (int)(dir * k * amount);
             src = wg_clampi(src, 0, span - 1);
             row[px] = s_blur_line[src];
+        }
         }
     }
 }
@@ -511,13 +599,18 @@ void wg_round_rect_specular(wg_canvas_t *c, float x, float y, float w, float h, 
     lx /= ll;
     ly /= ll;
 
-    int x0 = wg_clampi((int)floorf(x) - 3, 0, c->w);
-    int x1 = wg_clampi((int)ceilf(x + w) + 3, 0, c->w);
     int y0 = wg_clampi((int)floorf(y) - 3, 0, c->h);
     int y1 = wg_clampi((int)ceilf(y + h) + 3, 0, c->h);
 
     for (int py = y0; py < y1; py++) {
-        for (int px = x0; px < x1; px++) {
+        int l0, l1, r0, r1;
+        if (!rrect_row_band((float)py + 0.5f, cx, cy, hw, hh, r, 3.5f, c->w, &l0, &l1, &r0, &r1)) {
+            continue;
+        }
+        for (int pass = 0; pass < 2; pass++) {
+            int px = pass == 0 ? l0 : r0;
+            int pend = pass == 0 ? l1 : r1;
+            for (; px < pend; px++) {
             float fx = (float)px + 0.5f, fy = (float)py + 0.5f;
             float nx, ny;
             float d = rrect_sd_grad(fx, fy, cx, cy, hw, hh, r, &nx, &ny);
@@ -550,6 +643,7 @@ void wg_round_rect_specular(wg_canvas_t *c, float x, float y, float w, float h, 
                 continue;
             }
             wg_blend(c, px, py, WG_RGBA(255, 255, 255, a));
+            }
         }
     }
 }
@@ -570,13 +664,21 @@ void wg_round_rect_shadow(wg_canvas_t *c, float x, float y, float w, float h, fl
     if (r > hh) {
         r = hh;
     }
-    int x0 = wg_clampi((int)floorf(x - spread), 0, c->w);
-    int x1 = wg_clampi((int)ceilf(x + w + spread), 0, c->w);
     int y0 = wg_clampi((int)floorf(y - spread), 0, c->h);
     int y1 = wg_clampi((int)ceilf(y + h + spread * 2.0f), 0, c->h);
 
     for (int py = y0; py < y1; py++) {
-        for (int px = x0; px < x1; px++) {
+        /* The shadow is a ring outside the shape; the inside of the card
+           contributes nothing and was being tested pixel by pixel anyway. */
+        int l0, l1, rr0, rr1;
+        if (!rrect_row_band((float)py + 0.5f, cx, cy, hw, hh, r, spread + 1.0f, c->w,
+                            &l0, &l1, &rr0, &rr1)) {
+            continue;
+        }
+        for (int pass = 0; pass < 2; pass++) {
+        int px = pass == 0 ? l0 : rr0;
+        int pend = pass == 0 ? l1 : rr1;
+        for (; px < pend; px++) {
             float d = rrect_sd((float)px + 0.5f, (float)py + 0.5f, cx, cy, hw, hh, r);
             if (d <= 0.0f || d > spread) {
                 continue;
@@ -588,6 +690,7 @@ void wg_round_rect_shadow(wg_canvas_t *c, float x, float y, float w, float h, fl
                 continue;
             }
             wg_blend(c, px, py, WG_RGBA(0, 0, 0, a));
+        }
         }
     }
 }
@@ -808,10 +911,14 @@ void wg_blur_rrect(wg_canvas_t *c, float x, float y, float w, float h, float r, 
         }
 
         uint32_t *row = wg_row_at(c, py);
+        /* The same mapping as before, in integers. With a scale of four the
+           source coordinate is (2t - 3)/8, so the whole and fractional parts
+           come out of a shift and a mask instead of a division, a floorf and
+           two conversions per pixel. */
         for (int px = ia; px < ib; px++) {
-            float u = ((float)(px - rx0) + 0.5f) / (float)WG_BLUR_SCALE - 0.5f;
-            int i0 = (int)floorf(u);
-            unsigned tu = (unsigned)((u - (float)i0) * 256.0f);
+            int num = ((px - rx0) << 1) - 3;
+            int i0 = num >> 3;
+            unsigned tu = (unsigned)((num - (i0 << 3)) << 5);
             int i1 = i0 + 1;
             i0 = wg_clampi(i0, 0, sw - 1);
             i1 = wg_clampi(i1, 0, sw - 1);
