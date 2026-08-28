@@ -149,4 +149,37 @@ void wg_to_rgb565(const wg_canvas_t *c, uint16_t *out);
    goes across in slices through a small buffer in internal memory. */
 void wg_to_rgb565_rows(const wg_canvas_t *c, uint16_t *out, int y0, int rows);
 
+/* Burn-in mitigation.
+ *
+ * An AMOLED ages where it is lit, so anything bright that never moves leaves a
+ * ghost. On this panel that is the clock: the digits sit at a fixed baseline
+ * and the colon between them is lit essentially every minute the device is
+ * plugged in. Left alone that is visible in months, not years.
+ *
+ * The standard answer, and what every phone and watch with an always-on face
+ * does, is to walk the whole picture around a small lattice so no pixel keeps
+ * the same content. It is applied when the frame is handed to the panel rather
+ * than while it is being drawn, so nothing in the compositor has to know: an
+ * element that was missed would be the only stationary thing on a moving
+ * screen, which is worse than not doing this at all.
+ *
+ * It softens rather than removes. A stroke ten pixels wide displaced by three
+ * still has a core that is lit at every offset; what moves is the edge, which
+ * is where the contrast that makes a ghost visible lives. Reducing the total
+ * is a matter of brightness and off-time, not of this. */
+#define WG_SHIFT_MAX 3
+#define WG_SHIFT_PERIOD ((2 * WG_SHIFT_MAX + 1) * (2 * WG_SHIFT_MAX + 1) * 2)
+
+/* The displacement for a given minute. Every step moves by at most one pixel
+   in one axis, so the motion has nowhere to be seen even against a static
+   background, and the walk is a closed loop that visits the whole lattice
+   evenly. */
+void wg_pixel_shift(int64_t minute, int *dx, int *dy);
+
+/* The conversion, with the finished frame displaced. Source pixels outside the
+   canvas repeat the nearest edge; at three pixels that is sky at the top and
+   sides and the near-black land at the foot, none of which shows. */
+void wg_to_rgb565_rows_shifted(const wg_canvas_t *c, uint16_t *out, int y0, int rows,
+                               int dx, int dy);
+
 #endif

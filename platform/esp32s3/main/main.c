@@ -525,13 +525,19 @@ static void ui_task(void *arg)
            primitives themselves rewritten to be slice-native, which is a
            different project from moving the buffer. */
         wg_app_render(&app, &canvas);
+        /* Where the panel is being asked to put the picture this minute.
+           Worked out once for the whole frame: a displacement that changed
+           between bands would tear it. */
+        int shift_x, shift_y;
+        wg_pixel_shift(app.now_unix / 60, &shift_x, &shift_y);
+
         /* Converted and pushed a band at a time. The dither reads absolute y,
            so the bands are seamless. */
         int slot = 0;
         bool inflight = false;
         for (int y0 = 0; y0 < WG_H; y0 += RM67162_BAND) {
             int rows = WG_H - y0 < RM67162_BAND ? WG_H - y0 : RM67162_BAND;
-            wg_to_rgb565_rows(&canvas, s_band[slot], y0, rows);
+            wg_to_rgb565_rows_shifted(&canvas, s_band[slot], y0, rows, shift_x, shift_y);
             /* The previous band has had a whole conversion to finish in. */
             if (inflight) {
                 rm67162_blit_wait();

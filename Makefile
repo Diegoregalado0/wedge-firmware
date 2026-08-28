@@ -91,7 +91,15 @@ test-convert: $(CORE)
 		tools/test_convert.c -o $(BUILD)/test-convert -lm
 	./$(BUILD)/test-convert
 
-test: wasm test-moon test-tz test-convert
+# Burn-in mitigation: the walk's properties, that the displacement is exact,
+# and a measurement of what it buys against a stroke the width of the colon.
+test-shift: $(CORE)
+	@mkdir -p $(BUILD)
+	$(CC) $(CORE_ONLY_CFLAGS) core/src/canvas.c core/src/text.c \
+		tools/test_shift.c -o $(BUILD)/test-shift -lm
+	./$(BUILD)/test-shift
+
+test: wasm test-moon test-tz test-convert test-shift
 	cd $(BUILD)/wasm && node test.mjs && node bank.mjs
 
-.PHONY: fonts run clean shots wasm test test-tz test-convert
+.PHONY: fonts run clean shots wasm test test-tz test-convert test-shift

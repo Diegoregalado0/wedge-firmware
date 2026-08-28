@@ -986,6 +986,70 @@ static void build_dither_tables(void)
     s_dith_ready = true;
 }
 
+void wg_pixel_shift(int64_t minute, int *dx, int *dy)
+{
+    const int span = 2 * WG_SHIFT_MAX + 1;
+    const int cells = span * span;
+
+    int64_t i = minute % WG_SHIFT_PERIOD;
+    if (i < 0) {
+        i += WG_SHIFT_PERIOD;
+    }
+    /* The second half retraces the first. A serpentine on its own would have
+       to jump from the far corner back to the near one to repeat, and that
+       jump is the whole lattice wide; folding it back on itself keeps every
+       step to a single pixel and dwells one extra minute at each end. */
+    if (i >= cells) {
+        i = (int64_t)(2 * cells - 1) - i;
+    }
+
+    int row = (int)(i / span);
+    int col = (int)(i % span);
+    /* Alternate rows run the other way, so stepping off the end of one lands
+       on the start of the next rather than back across the whole row. */
+    if (row & 1) {
+        col = span - 1 - col;
+    }
+    *dx = col - WG_SHIFT_MAX;
+    *dy = row - WG_SHIFT_MAX;
+}
+
+void wg_to_rgb565_rows_shifted(const wg_canvas_t *c, uint16_t *out, int y0, int rows,
+                               int dx, int dy)
+{
+    if (!s_dith_ready) {
+        build_dither_tables();
+    }
+    const int w = c->w;
+    for (int y = y0; y < y0 + rows; y++) {
+        /* Where this panel row reads from, held inside the canvas so the edges
+           repeat rather than sampling nothing. */
+        int sy = wg_clampi(y - dy, 0, c->h - 1);
+        const uint32_t *row = wg_row_at(c, sy);
+        uint16_t *orow = &out[(size_t)(y - y0) * w];
+
+        /* Keyed to the source row, so the dither travels with the picture and
+           the band seams stay invisible however the frame is displaced. */
+        const uint8_t *trb[8];
+        const uint8_t *tg[8];
+        for (int i = 0; i < 8; i++) {
+            int thr = k_bayer[sy & 7][i];
+            trb[i] = s_dith_rb[(thr >> 3) & 7];
+            tg[i] = s_dith_g[(thr >> 4) & 3];
+        }
+
+        for (int x = 0; x < w; x++) {
+            int sx = x - dx;
+            sx = sx < 0 ? 0 : (sx >= w ? w - 1 : sx);
+            uint32_t p = row[sx];
+            int i = sx & 7;
+            orow[x] = (uint16_t)((trb[i][(p >> 16) & 0xFF] << 11) |
+                                 (tg[i][(p >> 8) & 0xFF] << 5) |
+                                 trb[i][p & 0xFF]);
+        }
+    }
+}
+
 void wg_to_rgb565_rows(const wg_canvas_t *c, uint16_t *out, int y0, int rows)
 {
     if (!s_dith_ready) {
