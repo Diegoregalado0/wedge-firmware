@@ -1,11 +1,10 @@
 /* The standing lines.
  *
- * These are the words on screen when nobody has sent anything, which is most of
- * the device's life. They are held in a fixed-capacity bank rather than a static
- * table so they can be edited from the sender interface and survive a power
- * cut, and every mutation writes through to the host immediately: a bank that
- * needs the caller to remember to save is a bank that loses an edit the first
- * time the plug is pulled.
+ * Shown when no message is pending, which is the device's normal resting
+ * state. Held in a fixed-capacity bank rather than a static table so the set
+ * can be edited from the service and survives power loss. Every mutation
+ * writes through to the host immediately: a bank that relies on the caller to
+ * save is one that loses an edit on the first unclean shutdown.
  */
 
 #include "wedge/app.h"
@@ -13,8 +12,8 @@
 #include <stdio.h>
 #include <string.h>
 
-/* Thoughtful rather than romantic, and true on an ordinary day rather than only
-   on a good one. Written to be replaced: this is a starting set, not a voice. */
+/* Shipped defaults, intended to be replaced through the service. Present so a
+   unit that has never been configured still has something to display. */
 static const char *k_defaults[] = {
     "Small steps still count as moving.",
     "You can begin again at any hour.",

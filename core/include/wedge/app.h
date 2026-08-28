@@ -90,8 +90,8 @@ typedef struct {
     /* Used only when tz_auto_pacific is off. */
     int16_t tz_offset_minutes;
     /* US Pacific with its daylight-saving rule applied, rather than a fixed
-       offset. A bedside clock that needs reflashing twice a year to stay
-       correct is a broken bedside clock, and a fixed -8 is wrong for eight
+       offset. A clock that needs reflashing twice a year to stay correct is
+       a broken clock, and a fixed -8 is wrong for eight
        months of the year while a fixed -7 is wrong for the other four. */
     bool tz_auto_pacific;
     uint16_t poll_seconds;

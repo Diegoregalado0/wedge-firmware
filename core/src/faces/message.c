@@ -77,7 +77,7 @@ void wg_face_message(wg_app_t *a, wg_canvas_t *c)
         return;
     }
 
-    /* The capsule she touched becomes the card, every dimension including the
+    /* The capsule that was touched becomes the card, every dimension including the
        corner radius travelling together. This is one object changing size, not
        a card fading in over a capsule fading out, and the difference is what
        makes the gesture and its result read as the same event. */
@@ -140,9 +140,9 @@ void wg_face_message(wg_app_t *a, wg_canvas_t *c)
     wg_text_wrap(c, body, cx, first, wrap_w, gap, lines > 4 ? 5 : 4,
                  WG_RGBA(247, 246, 245, content_a), a->open->text);
 
-    /* A grabber rather than a sentence, at the foot because that is the
-       direction the card leaves in. Words here would be an instruction manual
-       on an object trying not to feel like equipment. */
+    /* An affordance rather than a label, at the foot because that is the
+       direction the card is dismissed in. Text here would be instructional
+       chrome on a surface that otherwise carries only content. */
     float handle_a = wg_smooth(0.72f, 0.98f, t) * (a->dragging ? 0.95f : 0.5f);
     wg_round_rect(c, (float)cx - 18.0f, f.y + f.h - 14.0f, 36.0f, 4.0f, 2.0f,
                   WG_RGBA(255, 255, 255, (unsigned)(255.0f * handle_a * 0.5f)));
@@ -164,8 +164,8 @@ void wg_face_boot(wg_app_t *a, wg_canvas_t *c)
     wg_color accent = wg_scene_accent(a->hours);
 
     float breath = 0.5f + 0.5f * sinf(a->scene.t * 1.5f);
-    /* Sized to be a deliberate mark rather than a speck on a panel this wide,
-       and still small enough that it is the only thing on screen. */
+    /* Sized to read as a deliberate mark at this panel width, and no larger,
+       since it is the only element drawn in this state. */
     wg_draw_heart(c, WG_W * 0.5f, WG_H * 0.5f - 6.0f, 26.0f + breath * 2.0f,
                   WG_RGBA(WG_R(accent), WG_G(accent), WG_B(accent), (unsigned)(225.0f * in)));
 

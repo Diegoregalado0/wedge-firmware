@@ -260,7 +260,7 @@ static void net_task(void *arg)
     for (;;) {
         char id[WG_MSG_ID_MAX];
         /* Acknowledgements go out before the next poll, otherwise the server
-           hands back the message she just read. One that cannot be delivered
+           hands back the message just read. One that cannot be delivered
            goes to the back of the queue rather than being dropped. */
         int waiting = uxQueueMessagesWaiting(s_acks);
         while (waiting-- > 0 && xQueueReceive(s_acks, id, 0) == pdTRUE) {
@@ -342,7 +342,7 @@ static void net_task(void *arg)
             proof_deadline = 0;
         }
 
-        /* Held until she is not reading something. The card is the only thing
+        /* Held until nothing is being read. The card is the only thing
            whose disappearance mid-sentence would be noticed. */
         if (s_restart_pending && s_app && s_app->state != WG_ST_MESSAGE_PRESENTATION) {
             ESP_LOGW(TAG, "restarting into the new build");
@@ -578,7 +578,7 @@ void app_main(void)
     if (!s_canvas || !s_band[0] || !s_band[1]) {
         /* Without buffers there is no display, which section 41 calls a
            display initialization failure. Restarting is the honest response;
-           there is no degraded mode that still shows her the time. */
+           there is no degraded mode that still shows the time. */
         ESP_LOGE(TAG, "no memory for frame buffers");
         esp_restart();
     }

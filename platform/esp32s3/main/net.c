@@ -114,7 +114,7 @@ void net_apply_sta_defaults(wifi_sta_config_t *sta)
        appears to work only on the third or fifth attempt. */
     sta->scan_method = WIFI_ALL_CHANNEL_SCAN;
     sta->sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
-    /* No floor. A weak network is still the network she asked for. */
+    /* No floor. A weak network is still the network that was chosen. */
     sta->threshold.rssi = -127;
     /* Open is the most permissive floor; the driver raises it by itself when a
        password is supplied, so this does not weaken a secured network. */
@@ -326,7 +326,7 @@ void net_poll_messages(void)
         cJSON *text = cJSON_GetObjectItem(it, "text");
         if (!cJSON_IsString(id) || !cJSON_IsString(text)) {
             /* Reject the entry and keep going. One malformed message must not
-               cost her the other four. */
+               cost the other four. */
             ESP_LOGW(TAG, "skipping malformed message at %d", i);
             continue;
         }
@@ -398,7 +398,7 @@ bool net_ack_read(const char *id)
     if (!s_connected) {
         /* Refused, not discarded. The caller keeps it queued: an acknowledgement
            lost while offline means the server hands the same message back on the
-           next poll, and she is shown something she has already read. */
+           next poll, and something already read is presented again. */
         return false;
     }
     char url[256];

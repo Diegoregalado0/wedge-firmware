@@ -253,7 +253,7 @@ int main(int argc, char **argv)
             unsigned g = ((p >> 5) & 0x3F) * 255 / 63;
             unsigned b = (p & 0x1F) * 255 / 31;
             /* Apply the backlight level the app asked for, so the night modes
-               look on screen the way they will look in the room. */
+               look on screen the way they will look on the panel. */
             float k = (float)sim.brightness / 255.0f;
             k = 0.15f + 0.85f * k;
             pixels[i] = 0xFF000000u | ((unsigned)(r * k) << 16) | ((unsigned)(g * k) << 8) | (unsigned)(b * k);

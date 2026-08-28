@@ -39,7 +39,7 @@ export async function POST(req: Request) {
   }
   /* The device's own buffer is 280 bytes and it truncates silently. Rejecting
    * here instead means the sender finds out now rather than discovering a cut
-   * sentence on the bedside table. */
+   * sentence on the device. */
   if (text.length > MAX_TEXT) {
     return Response.json(
       { error: `text must be ${MAX_TEXT} characters or fewer` },

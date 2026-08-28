@@ -168,10 +168,9 @@ const char *wg_ambient_line(const wg_app_t *a)
     if (n <= 0) {
         return "";
     }
-    /* One line per day, turning over at local midnight. It used to change with
-       the part of the day as well, which meant the sentence moved under her
-       while she was in the room; a standing line should be the same thought all
-       day and a different one tomorrow. */
+    /* One line per day, turning over at local midnight. Keying it to the part
+       of the day as well meant the text could change while the panel was being
+       looked at, which reads as a fault rather than as a feature. */
     int64_t local = a->now_unix + (int64_t)wg_tz_offset_minutes(&a->config, a->now_unix) * 60;
     int64_t days = local / 86400;
     int64_t idx = days % n;
@@ -184,15 +183,15 @@ const char *wg_ambient_line(const wg_app_t *a)
 void wg_offer_label(const wg_app_t *a, char *buf, size_t n)
 {
     int pending = wg_msg_cache_pending(&a->cache, a->now_unix);
-    /* Short, because the pill shares its row with the clock and the meridiem
-       now sits between them. The heart carries the warmth; the words only
-       have to say that there is something and it is new. */
+    /* Short, because the indicator shares its row with the clock and the
+       meridiem now sits between them. The mark carries the signal; the label
+       only has to say that something is present and unread. */
     if (pending > 1) {
         snprintf(buf, n, "%d messages", pending);
     } else if (pending == 1) {
         snprintf(buf, n, "New message");
     } else {
-        /* Kept. Named for what it is rather than advertised again. */
+        /* Retained rather than unread: stated, not signalled. */
         snprintf(buf, n, "Still here");
     }
 }
@@ -209,8 +208,8 @@ wg_rect_t wg_offer_rect(const wg_app_t *a)
     char label[40];
     wg_offer_label(a, label, sizeof(label));
     /* The mark belongs to something new. A kept message keeps the capsule but
-       loses the heart, because a heart that stays lit after she has read the
-       message teaches her that it does not mean anything is waiting. */
+       loses the heart, because a heart that stays lit after the message has
+       been read teaches that it does not mean anything is waiting. */
     bool fresh = wg_msg_cache_pending(&a->cache, a->now_unix) > 0;
     const float h = 44.0f;
     const float pad_l = fresh ? 14.0f : 16.0f;
@@ -277,14 +276,10 @@ void wg_face_home(wg_app_t *a, wg_canvas_t *c)
         wg_text_over(c, &wg_font_clock, x, clock_y, WG_ALIGN_LEFT,
                      WG_RGBA(WG_R(ink), WG_G(ink), WG_B(ink), ia), t);
 
-        /* Sat on the numerals' own baseline rather than raised: a superscript
-           meridiem at this size reads as a footnote to the hour instead of
-           part of it. Quieter than the digits, because it is the least
-           surprising thing on the panel. */
-        /* On the numerals' own baseline, not raised: a superscript meridiem at
-           this size reads as a footnote to the hour rather than part of it.
-           Quieter than the digits, because it is the least surprising thing
-           on the panel and never the reason anyone looked. */
+        /* On the numerals' own baseline, not raised. A superscript meridiem at
+           this size reads as a footnote to the hour rather than part of it,
+           and it is set quieter than the digits because it carries the least
+           information of anything in the block. */
         const char *mer = wg_app_meridiem(a);
         if (mer[0]) {
             int tw = wg_text_width(&wg_font_clock, t);
@@ -344,8 +339,8 @@ void wg_face_home(wg_app_t *a, wg_canvas_t *c)
     wg_rect_t p = wg_offer_rect(a);
     wg_color accent = wg_scene_accent(a->hours);
 
-    /* Something new breathes; something already read sits still. The difference
-       between an offer and a nag is entirely whether it stops moving. */
+    /* Unread content animates; retained content is static. Motion is the whole
+       signal here, so it has to stop once the message has been seen. */
     float breath = fresh ? 0.5f + 0.5f * sinf(a->scene.t * 1.15f) : 0.0f;
     float press = wg_clampf(a->press.value, 0.0f, 1.0f);
 
@@ -373,8 +368,8 @@ void wg_face_home(wg_app_t *a, wg_canvas_t *c)
     wg_text(c, &wg_font_offer, (int)text_x, (int)(cy + 6.0f), WG_ALIGN_LEFT,
             WG_RGBA(246, 246, 250, (unsigned)(offer_a * (fresh ? 236.0f : 168.0f))), label);
 
-    /* Offline is stated once, quietly, and only where it changes what she can
-       expect. It is not an error and is never allowed to look like one. */
+    /* Offline is stated once, quietly, and only where it changes what can be
+       expected. It is not an error and is never allowed to look like one. */
     if (!a->wifi_up && fade > 0.01f) {
         wg_text(c, &wg_font_label, WG_W - 30, 30, WG_ALIGN_RIGHT,
                 WG_RGBA(WG_R(ink), WG_G(ink), WG_B(ink), (unsigned)(ia * 0.28f)), "Offline");

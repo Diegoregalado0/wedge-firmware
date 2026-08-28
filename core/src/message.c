@@ -40,7 +40,7 @@ wg_message_t *wg_msg_cache_put(wg_msg_cache_t *c, const wg_message_t *m)
     }
 
     /* Full: evict the lowest-priority read or archived entry, and failing that
-       refuse the newcomer rather than dropping something she has not seen. */
+       refuse the newcomer rather than dropping something not yet seen. */
     wg_message_t *victim = NULL;
     for (int i = 0; i < c->count; i++) {
         wg_message_t *it = &c->items[i];
@@ -117,7 +117,7 @@ void wg_msg_cache_sweep(wg_msg_cache_t *c, int64_t now)
         wg_message_t *it = &c->items[i];
         bool expired = it->expires_at > 0 && it->expires_at <= now && it->state != WG_MSG_STATE_READ;
         bool done = it->state == WG_MSG_STATE_ARCHIVED;
-        /* A read message is kept for a day so she can go back to it, then it
+        /* A read message is kept for a day so it can be returned to, then it
            retires on its own without ever having been dismissed by hand. */
         if (it->state == WG_MSG_STATE_READ && it->read_at > 0 && now - it->read_at > WG_KEEP_SECONDS) {
             done = true;

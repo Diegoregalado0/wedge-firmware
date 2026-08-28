@@ -15,8 +15,8 @@ typedef struct {
 esp_err_t cst816_init(void);
 
 /* Reads the current contact. Returns false only on a bus error, which the
-   caller treats as "no touch this frame" rather than as a fault: a bedside
-   clock does not stop telling the time because I2C glitched. */
+   caller treats as "no touch this frame" rather than as a fault: a clock does
+   not stop telling the time because I2C glitched. */
 bool cst816_read(cst816_point_t *out);
 
 #endif

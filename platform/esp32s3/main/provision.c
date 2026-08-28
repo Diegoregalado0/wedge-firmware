@@ -9,7 +9,7 @@
  *
  * The alternative was Espressif's own provisioning component, which is smaller
  * but requires the recipient to install an app first. For a device that is a
- * gift, the install is the whole cost.
+ * consumer appliance, that install is the whole cost of onboarding.
  */
 
 #include "provision.h"
@@ -334,7 +334,7 @@ static esp_err_t send_portal(httpd_req_t *req, const char *error)
                 httpd_resp_send_chunk(req, ">", HTTPD_RESP_USE_STRLEN);
                 httpd_resp_send_chunk(req, safe, HTTPD_RESP_USE_STRLEN);
                 if (ent) {
-                    /* Listed rather than hidden: it is on her phone's own list,
+                    /* Listed rather than hidden: it is on the phone's own list,
                        so leaving it out here reads as a broken scan. */
                     httpd_resp_send_chunk(req, " (needs a sign-in)", HTTPD_RESP_USE_STRLEN);
                 }
@@ -485,8 +485,8 @@ static esp_err_t save_post(httpd_req_t *req)
            password that was already right. */
         /* One short sentence that says what to do next. The radio knows
            exactly why it failed and each of these needs something different
-           from the person reading it, but a paragraph explaining Wi-Fi to
-           someone who just wants their clock working is worse than useless. */
+           from the reader, but a paragraph of network theory in front of
+           someone trying to finish setup is worse than useless. */
         const char *why;
         switch (s_last_reason) {
         case 201: /* NO_AP_FOUND */

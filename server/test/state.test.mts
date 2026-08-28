@@ -1,7 +1,7 @@
 /* Which of the three places a message has got to. The interesting case is a
    scheduled one: the device is handed it ahead of its hour so it can show it
    without the network, so having been delivered is not on its own enough to
-   say it is on her screen. */
+   say it is on the device. */
 
 import { test } from "node:test";
 import assert from "node:assert/strict";

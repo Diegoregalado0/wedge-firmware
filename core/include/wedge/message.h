@@ -39,11 +39,11 @@ typedef struct {
     int64_t expires_at;
     uint8_t priority;
     bool read_ack_pending; /* read locally, not yet acknowledged to the server */
-    int64_t read_at;       /* when she opened it, for the keep window */
+    int64_t read_at;       /* when it was opened, for the keep window */
 } wg_message_t;
 
-/* Fixed-capacity cache. A bedside appliance that mallocs per message is a
-   bedside appliance that fragments its heap over a year of uptime. */
+/* Fixed-capacity cache. An always-on appliance that mallocs per message is an
+   appliance that fragments its heap over a year of uptime. */
 typedef struct {
     wg_message_t items[WG_MSG_CACHE];
     int count;
@@ -65,10 +65,9 @@ int wg_msg_cache_pending(const wg_msg_cache_t *c, int64_t now);
 
 /* The most recently read message, while it is still within its keep window.
 
-   A message that vanishes the instant it is read is one the device has told her
-   is disposable, so a read message stays reachable and is only displaced by
-   something newer. Twelve hours is long enough that something read at breakfast
-   is still there at bedtime, and short enough that it does not become a pile. */
+   A read message stays addressable and is displaced only by a newer one. The
+   window is twelve hours: long enough to span a normal waking day, short
+   enough that the cache does not accumulate. */
 #define WG_KEEP_SECONDS (12 * 3600)
 wg_message_t *wg_msg_cache_kept(wg_msg_cache_t *c, int64_t now);
 

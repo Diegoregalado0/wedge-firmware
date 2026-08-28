@@ -26,7 +26,7 @@ export function stamp(t: number): string {
  *
  * Sent and read were the only states the server knew, which put a message
  * still waiting for the next poll in the same bucket as one already lit up on
- * her table. Those are different things to know.
+ * the device. Those are different things to know.
  *
  * A scheduled message is fetched ahead of its hour so the device can show it
  * without the network, so having been handed over is not on its own enough to

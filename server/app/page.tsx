@@ -180,8 +180,8 @@ export default function Page() {
         <h1>Wedge</h1>
         <p>
           {pending.length === 0
-            ? "Nothing waiting on her table."
-            : `${pending.length} waiting on her table.`}
+            ? "Nothing waiting on the device."
+            : `${pending.length} waiting on the device.`}
         </p>
       </header>
 
@@ -286,7 +286,7 @@ export default function Page() {
         >
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h2>Schedule</h2>
-            <p className="muted">It stays hidden until this time, then waits on her table.</p>
+            <p className="muted">It stays hidden until this time, then waits on the device.</p>
             <label>
               <span>Send at</span>
               <input

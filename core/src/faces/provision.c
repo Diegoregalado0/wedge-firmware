@@ -82,7 +82,7 @@ void wg_face_provision(wg_app_t *a, wg_canvas_t *c)
 
     /* The line that matters: the network name while waiting, the network being
        joined while connecting. Set at the message size, because it is the one
-       thing on screen anyone needs to read from across a room. */
+       thing on screen that has to be legible at a distance. */
     const char *headline = a->prov_stage == WG_PROV_TRYING ? a->prov_detail : a->prov_ap;
     if (headline[0]) {
         wg_text(c, &wg_font_msg, cx, 132, WG_ALIGN_CENTER,

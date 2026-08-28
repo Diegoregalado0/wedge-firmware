@@ -5,10 +5,10 @@
 
 /* Firmware updates over the air.
  *
- * The device is a gift. Once it is on someone else's bedside table, a fix that
- * needs a cable is a fix that does not happen, so it has to be able to update
- * itself. The hazard is the obvious one: a bad image on a device nobody can
- * reach is worse than no update mechanism at all.
+ * Once a unit is deployed, a fix that needs a cable is a fix that does not
+ * happen, so it has to be able to update itself. The hazard is the obvious
+ * one: a bad image on a device nobody can reach is worse than no update
+ * mechanism at all.
  *
  * What stops that is the bootloader's rollback. A freshly written image boots
  * once as pending, and unless the firmware itself declares it healthy the next

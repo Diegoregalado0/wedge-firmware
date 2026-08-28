@@ -235,8 +235,8 @@ void wg_scene_step(wg_scene_t *s, float hours, float dt)
     wg_spring_step(&s->recede, dt);
 
     float alt = wg_scene_altitude(hours);
-    /* Air moves less at night, and a bedside object that is busy at 2am is a
-       bedside object that gets turned around to face the wall. */
+    /* Ambient motion is scaled down at night. Perceived motion on an always-on
+       panel is far more intrusive in a dark room than in a lit one. */
     float activity = wg_lerpf(0.35f, 1.0f, wg_smooth(-0.3f, 0.4f, alt));
     s->wind = 1.0f + 0.4f * sinf(s->t * 0.11f);
 
@@ -386,8 +386,8 @@ void wg_scene_draw(wg_canvas_t *c, const wg_scene_t *s)
         float mx = wg_lerpf(WG_ARC_X0, WG_ARC_X1, night_frac) * WG_W;
         float my = (float)WG_HORIZON - 30.0f + alt * 96.0f;
         /* The halo tracks how much of the disc is actually lit. A three-day
-           crescent throwing a full moon's glow is the sort of thing nobody can
-           name but everybody notices. */
+           crescent throwing a full moon's glow is the kind of inconsistency
+           that registers as wrong without being identifiable. */
         float illum = (1.0f - cosf(6.2831853f * s->moon_phase)) * 0.5f;
         wg_glow(c, mx, my, 30.0f + 22.0f * illum,
                 WG_RGBA(150, 168, 220, (unsigned)(moon_a * 70.0f * (0.35f + 0.65f * illum))), 2.4f);

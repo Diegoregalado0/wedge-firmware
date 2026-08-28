@@ -4,7 +4,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Wedge",
-  description: "Send something to her bedside table.",
+  description: "Send a message to the device.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -484,8 +484,8 @@ button.ghost {
   border: 1px solid var(--line);
 }
 
-/* Where a message has got to. The colour carries the state at a glance and the
-   words carry it exactly; neither is load-bearing on its own. */
+/* Delivery state. Colour gives the state at a glance, the label gives it
+   exactly; neither is relied on alone. */
 .dot {
   display: inline-block;
   width: 7px;

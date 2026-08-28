@@ -13,9 +13,9 @@ void wg_config_defaults(wg_config_t *c)
     c->evening_start = 17;
     c->night_start = 21;
     c->sleep_start = 0;
-    /* The floor is not zero: the panel must still be readable if she wakes at
-       03:00, just not bright enough to wake her further. With no light sensor
-       on this board these two numbers are the entire brightness policy. */
+    /* Non-zero floor: the panel must remain legible in a dark room without
+       emitting enough light to be disruptive. With no ambient light sensor on
+       this board, these two values are the entire brightness policy. */
     c->brightness_min = 6;
     c->brightness_max = 210;
     c->tz_auto_pacific = true;
@@ -357,7 +357,7 @@ void wg_app_event(wg_app_t *a, const wg_event_t *e)
     case WG_EV_WIFI_DOWN:
         a->wifi_up = false;
         /* Never a fatal screen for a missing network: the clock is still true
-           and the cached messages are still hers. */
+           and the cached messages are still there. */
         say(a, "Offline");
         break;
 
@@ -478,8 +478,8 @@ void wg_app_event(wg_app_t *a, const wg_event_t *e)
 static void wg_app_step_brightness(wg_app_t *a)
 {
     uint8_t want = wg_brightness_for(&a->config, a->hours);
-    /* Rate-limit brightness so a mode boundary is a slow ramp rather than a
-       step she would notice from across the room. */
+    /* Rate-limited so a mode boundary ramps rather than steps. A discontinuity
+       in emission is far more noticeable than the change in level itself. */
     if (want != a->brightness) {
         int delta = (int)want - (int)a->brightness;
         int step = delta > 0 ? 1 : -1;
@@ -617,7 +617,7 @@ void wg_app_tick(wg_app_t *a, float dt)
     }
     wg_spring_step(&a->indicator, dt);
     wg_spring_step(&a->press, dt);
-    /* The scene is revealed only once boot is over, so the first thing she sees
+    /* The scene is revealed only once boot is over, so the first thing shown
        is not a sky drawn from a clock that has not been set. */
     wg_spring_to(&a->reveal, a->state > WG_ST_SYNCING_TIME ? 1.0f : 0.0f);
     wg_spring_step(&a->reveal, dt);

@@ -24,7 +24,7 @@ export async function GET(req: Request) {
     .slice(0, 8);
 
   /* Handing a message over is the moment it stops being in the post and starts
-   * being on her table, so that is where it gets stamped. Only the first time:
+   * being on the device, so that is where it gets stamped. Only the first time:
    * the device re-fetches anything it has not acknowledged, and the interesting
    * time is when it first arrived, not when it was last seen. Written after
    * the response is prepared and never allowed to fail the poll, because a

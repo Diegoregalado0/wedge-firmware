@@ -53,14 +53,13 @@ FACES = [
     ("label",   SF, 15, [100.0, 17.0, 400.0, 520.0], ASCII,     0.10),
     # The standing line and the offer capsule get their own faces rather than
     # reusing label: label is also the message card's body copy, and card
-    # wrapping was tuned to its metrics. A quote read from across a room wants
-    # weight, not just size, or it competes with the clock without winning.
+    # wrapping was tuned to its metrics. Legibility at a distance needs weight
+    # as well as size, or the line competes with the clock without winning.
     ("quote",   SF, 22, [100.0, 24.0, 400.0, 650.0], DATESET,   0.05),
     ("offer",   SF, 18, [100.0, 20.0, 400.0, 600.0], ASCII,     0.10),
-    # The message body is San Francisco too. A serif was the more romantic
-    # choice and it is what Apple reaches for in Books and News, but a message
-    # card is a notification surface, and every notification Apple ships is set
-    # in SF. Mixing a reading face into a UI card is what read as dated.
+    # The message body is San Francisco too. A serif is the conventional
+    # reading face, but a message card is a notification surface, and mixing a
+    # text face into UI chrome is what read as dated.
     # NY is still wired up in this table if the serif is ever wanted back.
     ("msg",     SF, 31, [100.0, 32.0, 400.0, 530.0], ASCII, -0.35),
     ("msg_s",   SF, 24, [100.0, 26.0, 400.0, 550.0], ASCII, -0.15),
